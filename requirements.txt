@@ -1,0 +1,8 @@
+pymcprotocol
+python-multipart
+pyyaml
+influxdb-client
+pymongo
+fastapi
+uvicorn[standard]
+cryptography

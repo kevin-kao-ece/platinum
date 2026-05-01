@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NeoEdge Melsec Bridge 管理</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="page-head">
+      <h1>NeoEdge Melsec Bridge V1.2.20</h1>
+    </header>
+
+    <div class="dashboard-grid">
+    <!-- Block 1: Status & License -->
+    <section class="card block-status" aria-labelledby="h-status">
+      <h2 id="h-status">狀態與授權</h2>
+
+      <div class="status-row">
+        <span class="field-label">目前狀態</span>
+        <span id="statusBadge" class="badge badge-muted" title="running_status">載入中…</span>
+        <button type="button" class="btn btn-small ghost" id="btnRefreshStatus" title="重新整理狀態">重新整理</button>
+      </div>
+
+      <div class="status-row">
+        <span class="field-label">剩餘時間</span>
+        <span id="remainTimeEl" class="remain-time mono" title="remain_time">—</span>
+      </div>
+
+      <div id="licenseStepsPanel" class="license-panel hidden" aria-live="polite">
+        <p class="license-banner"><strong>尚未取得授權（No License）</strong></p>
+        <p class="muted small">請依下列步驟完成申請與匯入：</p>
+        <ol class="steps-list">
+          <li>
+            <span class="step-num">1</span>
+            <span>點選「產生申請檔」，將產出檔案送交 <strong id="licenseContactEl">—</strong> 申請授權。</span>
+          </li>
+          <li>
+            <span class="step-num">2</span>
+            <span>取得憑證後，選擇檔案並按「匯入 License」。</span>
+          </li>
+        </ol>
+        <div class="license-actions">
+          <a class="btn primary" href="/export_csr" id="linkExportCsr">產生申請檔（CSR）</a>
+          <label class="btn-merge lic-merge">
+            <span class="btn-merge-label">選擇憑證檔</span>
+            <input type="file" id="licFile" accept=".crt,.pem,.cer" hidden />
+            <span id="licFileName" class="file-name muted">未選擇檔案</span>
+          </label>
+        </div>
+        <button type="button" class="btn primary tight full-width" id="btnLicSubmit">執行匯入 License</button>
+        <p id="licMsg" class="msg"></p>
+      </div>
+
+      <div id="licenseOkPanel" class="license-ok hidden">
+        <p class="ok-line"><span class="badge badge-ok">Licensed</span> 已取得授權，無需申請步驟。</p>
+      </div>
+    </section>
+
+    <!-- Block 2: Operation -->
+    <section class="card block-op" aria-labelledby="h-op">
+      <h2 id="h-op">操作</h2>
+
+      <div class="op-item">
+        <span class="field-label">設定檔</span>
+        <a class="btn primary full-width" href="/api/config/export">匯出 config.yaml</a>
+      </div>
+
+      <div class="op-item">
+        <span class="field-label">匯入 config.yaml</span>
+        <label class="btn-merge cfg-merge">
+          <span class="btn-merge-label">選擇 YAML</span>
+          <input type="file" id="cfgFile" accept=".yaml,.yml,application/x-yaml,text/yaml" hidden />
+          <span id="cfgFileName" class="file-name muted">未選擇檔案</span>
+        </label>
+        <button type="button" class="btn primary full-width" id="btnImportCfg">確認上傳並軟重載</button>
+        <p id="cfgMsg" class="msg"></p>
+      </div>
+
+      <div class="op-item">
+        <span class="field-label">日誌</span>
+        <div class="btn-grid">
+          <a class="btn" href="/api/logs/zip">下載 Logs（ZIP）</a>
+          <button type="button" class="btn" id="btnToggleLogs">檢視最近日誌</button>
+        </div>
+        <div id="logPanel" class="log-panel hidden">
+          <div class="log-toolbar">
+            <span class="muted small">最近 <span id="logLineCount">—</span> 行</span>
+            <button type="button" class="btn btn-small ghost" id="btnRefreshLogs">重新載入</button>
+          </div>
+          <pre id="logViewer" class="log-viewer"></pre>
+        </div>
+      </div>
+
+      <div class="op-item">
+        <span class="field-label">服務</span>
+        <button type="button" class="btn warn full-width" id="btnRestart">重新啟動程式（軟重載）</button>
+      </div>
+    </section>
+    </div>
+  </main>
+  <script src="/static/app.js?v=2"></script>
+</body>
+</html>

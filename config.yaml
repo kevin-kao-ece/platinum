@@ -1,0 +1,44 @@
+app:
+  app_name: neoedgex_melsec_bridge
+  log_level: DEBUG
+  log_file_count: 30
+
+influxdb:
+  url: http://127.0.0.1:8086
+  token: f9d8b2e7-6a1c-4e92-99d2-cb9f3a1d5b7e
+  org: myOrg
+  bucket: myBucket
+  user: admin
+  password: admin@123
+  measurement: PLC
+
+mongodb:
+  host: 127.0.0.1
+  port: 27017
+  database: myDB
+  collection: myCollection
+  user: admin
+  password: admin@123
+
+melsec:
+  # name 用於 influxdb 的 TAGS
+  name: PLC_01
+  ip: 20.6.35.107
+  port: 6001
+  frame_type: 3E
+  # 同時 TCP 連線數 = 輪詢 tag 的 thread pool 大小（請勿超過 PLC 允許的上限）
+  max_connections: 1
+  poll_interval: 5.0
+  tags:
+    motorStartStop:
+      access: write
+      device: Y0
+      datatype: bool
+    targetSpeed:
+      access: write
+      device: D14
+      datatype: uint16
+    motorCurrent:
+      access: read
+      device: D12
+      datatype: float 
