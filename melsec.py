@@ -1,5 +1,6 @@
 import threading
 import struct
+import time
 from pymcprotocol import Type3E, Type4E
 from logHelper import logger
 
@@ -23,6 +24,14 @@ class MelsecSession:
         self.plc = Type4E() if frame == "4E" else Type3E()
         self.lock = threading.Lock()
         self.is_connected = False
+        try:
+            self._connect_retries = max(1, int(plc_config.get("connect_retries", 12)))
+        except (TypeError, ValueError):
+            self._connect_retries = 12
+        try:
+            self._connect_retry_delay = float(plc_config.get("connect_retry_delay_sec", 1.5))
+        except (TypeError, ValueError):
+            self._connect_retry_delay = 1.5
 
         self.type_map = {
             "uint16": (1, "<H"),
@@ -33,19 +42,54 @@ class MelsecSession:
             "double": (4, "<d"),
         }
 
+    def _disconnect_transport(self) -> None:
+        """連線失敗或錯誤後清掉底層 socket，避免残狀態阻擋下次 connect。"""
+        self.is_connected = False
+        try:
+            close_fn = getattr(self.plc, "close", None)
+            if callable(close_fn):
+                close_fn()
+        except Exception:
+            pass
+
     def _ensure_connection(self):
         with self.lock:
             if self.is_connected:
                 return True
-            try:
-                self.plc.connect(self.ip, self.port)
-                self.is_connected = True
-                return True
-            except Exception as e:
-                logger.error(
-                    f"PLC Connect Error (session {self.session_id}): {e}"
-                )
-                return False
+            delay = self._connect_retry_delay
+            last_err: Exception | None = None
+            for attempt in range(self._connect_retries):
+                try:
+                    self._disconnect_transport()
+                    self.plc.connect(self.ip, self.port)
+                    self.is_connected = True
+                    if attempt > 0:
+                        logger.info(
+                            "PLC session %s connected after %s attempts",
+                            self.session_id,
+                            attempt + 1,
+                        )
+                    return True
+                except Exception as e:
+                    last_err = e
+                    logger.warning(
+                        "PLC connect attempt %s/%s (session %s): %s",
+                        attempt + 1,
+                        self._connect_retries,
+                        self.session_id,
+                        e,
+                    )
+                    self.is_connected = False
+                    if attempt < self._connect_retries - 1:
+                        time.sleep(delay)
+                        delay = min(delay * 1.7, 20.0)
+            logger.error(
+                "PLC connect failed after %s attempts (session %s): %s",
+                self._connect_retries,
+                self.session_id,
+                last_err,
+            )
+            return False
 
     def read(self, tagName, details):
         if not self._ensure_connection():

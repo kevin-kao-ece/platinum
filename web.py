@@ -15,15 +15,26 @@ from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, W
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from logHelper import logger
+from logHelper import get_logs_dir, logger
 
 _ROOT = Path(__file__).resolve().parent
-_STATIC = _ROOT / "static"
+
+
+def _resource_path(relative: str) -> Path:
+    try:
+        base = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    except Exception:
+        base = _ROOT
+    return base / relative
+
+
+_STATIC = _resource_path("static")
 
 try:
     from licenseHelp import (
         LICENSE_CRT_PATH,
         LICENSE_CSR_PATH,
+        existing_license_crt_path,
         load_license_binding_meta,
     )
 except ImportError:
@@ -33,16 +44,12 @@ except ImportError:
     def load_license_binding_meta():  # type: ignore[misc]
         return None
 
+    def existing_license_crt_path():  # type: ignore[misc]
+        return LICENSE_CRT_PATH if LICENSE_CRT_PATH.is_file() else None
+
 # 固定 Web 綁定位址（不讀 config.yaml）
 WEB_BIND_HOST = "0.0.0.0"
 WEB_BIND_PORT = 7001
-
-def _resource_path(relative: str) -> Path:
-    try:
-        base = Path(sys._MEIPASS)  # type: ignore[attr-defined]
-    except Exception:
-        base = _ROOT
-    return base / relative
 
 
 def validate_platinum_config(data: Any) -> dict:
@@ -148,9 +155,9 @@ class WebAPI:
 
         @app.get("/", response_class=HTMLResponse)
         async def index() -> str:
-            for candidate in (_STATIC / "index.html", _resource_path("static/index.html")):
-                if candidate.is_file():
-                    return candidate.read_text(encoding="utf-8")
+            idx = _STATIC / "index.html"
+            if idx.is_file():
+                return idx.read_text(encoding="utf-8")
             raise HTTPException(status_code=404, detail="static/index.html not found")
 
         @app.get("/api/health")
@@ -164,7 +171,7 @@ class WebAPI:
                 cfg = {}
             app_cfg = cfg.get("app") or {}
             ctrl_licensed = bool(getattr(ctrl, "license_status", False))
-            crt_present = LICENSE_CRT_PATH.is_file()
+            crt_present = existing_license_crt_path() is not None
             # 與 main.check_license 一致：Controller 判定通過且憑證檔存在才算 Licensed
             licensed = ctrl_licensed and crt_present
             return {
@@ -244,7 +251,7 @@ class WebAPI:
 
         @app.get("/api/logs/zip")
         async def api_logs_zip():
-            log_dir = Path("logs")
+            log_dir = get_logs_dir()
             if not log_dir.is_dir():
                 raise HTTPException(status_code=404, detail="無 logs 目錄")
             files = [p for p in log_dir.iterdir() if p.is_file()]
@@ -266,7 +273,7 @@ class WebAPI:
 
         @app.get("/api/logs/tail")
         async def api_logs_tail(lines: int = 100):
-            log_file = Path("logs") / "app.log"
+            log_file = get_logs_dir() / "app.log"
             if not log_file.is_file():
                 return {"logs": ["尚無 logs/app.log"]}
             try:
@@ -292,11 +299,9 @@ class WebAPI:
             try:
                 lic = LicenseHelper()
                 lic.genLicenseCSR(str(LICENSE_CSR_PATH))
-            except (NotImplementedError, OSError, RuntimeError) as e:
-                logger.error("export_csr failed: %s", e)
-                raise HTTPException(
-                    status_code=503, detail=str(e)
-                ) from e
+            except Exception as e:
+                logger.exception("export_csr failed: %s", e)
+                raise HTTPException(status_code=503, detail=str(e)) from e
             if not LICENSE_CSR_PATH.is_file():
                 raise HTTPException(status_code=500, detail="CSR 產生失敗")
             return FileResponse(
@@ -328,6 +333,7 @@ class WebAPI:
                 iv_hex=meta.get("iv_hex", ""),
             )
             if result.get("status"):
+                LICENSE_CRT_PATH.parent.mkdir(parents=True, exist_ok=True)
                 LICENSE_CRT_PATH.write_bytes(cert_bytes)
                 ctrl.license_status = ctrl.check_license()
                 return {"status": "success", "message": "License 驗證成功"}

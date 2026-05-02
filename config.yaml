@@ -29,6 +29,9 @@ melsec:
   # 同時 TCP 連線數 = 輪詢 tag 的 thread pool 大小（請勿超過 PLC 允許的上限）
   max_connections: 1
   poll_interval: 5.0
+  # 開機／網路尚未就緒時 TCP 連線重試（每次 read/write 前連線）
+  # connect_retries: 12
+  # connect_retry_delay_sec: 1.5
   tags:
     motorStartStop:
       access: write

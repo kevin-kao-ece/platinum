@@ -1,4 +1,4 @@
-import ctypes, json, subprocess, os, base64, sys
+import ctypes, json, subprocess, os, base64, sys, tempfile
 from pathlib import Path
 from ctypes import wintypes
 from cryptography import x509
@@ -10,21 +10,74 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.x509.oid import ObjectIdentifier
 from datetime import datetime, timezone
-from logHelper import logger
+from logHelper import app_base_dir, logger
 
-# 授權相關檔案與 main.py / web.py 共用（不依賴當前工作目錄）
-ARTIFACT_DIR = Path(__file__).resolve().parent
+
+def _writable_license_root() -> Path:
+    """
+    授權檔必須可寫（CSR、license.binding、上傳的 license.crt）。
+    Windows Service 以 LocalSystem 執行時，exe 目錄常為唯讀，需 fallback。
+    """
+    candidates = [
+        app_base_dir(),
+        Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / "platinum" / "license",
+        Path(tempfile.gettempdir()) / "platinum_melsec_bridge" / "license",
+    ]
+    seen: set[str] = set()
+    for d in candidates:
+        try:
+            key = str(d.resolve())
+        except OSError:
+            key = str(d)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            probe = d / ".license_write_probe"
+            probe.write_bytes(b"1")
+            probe.unlink(missing_ok=True)
+            logger.info("License artifact directory: %s", d)
+            return d
+        except OSError as e:
+            logger.warning("License directory not writable %s: %s", d, e)
+
+    d = Path(tempfile.gettempdir()) / "platinum_melsec_bridge" / "license"
+    d.mkdir(parents=True, exist_ok=True)
+    logger.error("Using last-resort license directory: %s", d)
+    return d
+
+
+ARTIFACT_DIR = _writable_license_root()
 LICENSE_CRT_PATH = ARTIFACT_DIR / "license.crt"
-# 舊版綁定檔（仍會嘗試讀取以相容升級）
 LICENSE_META_PATH = ARTIFACT_DIR / "license_meta.json"
-# CSR 產生後寫入之本機綁定資料（匯出 CSR 時不會提供此檔下載）
 LICENSE_BINDING_PATH = ARTIFACT_DIR / "license.binding"
 LICENSE_CSR_PATH = ARTIFACT_DIR / "license.csr"
 
 
+def existing_license_crt_path() -> Path | None:
+    """讀取時：優先目前 artifact 目錄，其次 exe 旁（相容舊部署）。"""
+    for p in (LICENSE_CRT_PATH, app_base_dir() / "license.crt"):
+        try:
+            if p.is_file():
+                return p
+        except OSError:
+            continue
+    return None
+
+
 def load_license_binding_meta() -> dict | None:
-    """讀取 CSR 產生時寫入的綁定資料；優先 license.binding，其次舊版 license_meta.json。"""
-    for path in (LICENSE_BINDING_PATH, LICENSE_META_PATH):
+    """讀取綁定資料；優先目前 artifact 目錄，其次 exe 旁。"""
+    paths: list[Path] = []
+    for base in (ARTIFACT_DIR, app_base_dir()):
+        paths.append(base / "license.binding")
+        paths.append(base / "license_meta.json")
+    seen: set[str] = set()
+    for path in paths:
+        k = str(path)
+        if k in seen:
+            continue
+        seen.add(k)
         try:
             if path.is_file():
                 return json.loads(path.read_text(encoding="utf-8"))
@@ -91,11 +144,63 @@ class LicenseHelper:
         })
 
     def __getHWID(self):
-        cmd = 'wmic csproduct get uuid'
-        uuid = str(subprocess.check_output(cmd, shell=True))
-        # Extracting the UUID from the command output
-        data = uuid.split(r'\r\n')[1].replace('\\r','')
-        return data.strip()
+        """取得主機 UUID；服務帳號下 wmic 可能失敗，需備援。"""
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+        def _pick_uuid_line(blob: bytes) -> str | None:
+            for line in blob.decode(errors="replace").splitlines():
+                s = line.strip()
+                if not s or s.upper() == "UUID":
+                    continue
+                return s
+            return None
+
+        try:
+            out = subprocess.check_output(
+                ["wmic", "csproduct", "get", "uuid"],
+                stderr=subprocess.DEVNULL,
+                timeout=25,
+                creationflags=creationflags,
+            )
+            u = _pick_uuid_line(out)
+            if u:
+                return u
+        except (
+            subprocess.CalledProcessError,
+            FileNotFoundError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ):
+            pass
+
+        try:
+            out = subprocess.check_output(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID",
+                ],
+                stderr=subprocess.DEVNULL,
+                timeout=25,
+                creationflags=creationflags,
+            )
+            u = out.decode(errors="replace").strip()
+            if u:
+                return u
+        except (
+            subprocess.CalledProcessError,
+            FileNotFoundError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ):
+            pass
+
+        raise RuntimeError(
+            "無法取得主機 UUID（已嘗試 wmic 與 PowerShell CIM）。"
+            "若以 Windows Service 執行，請確認主機允許取得 Win32_ComputerSystemProduct.UUID。"
+        )
     
     def __getTPMHandle(self):
         h_provider = wintypes.HANDLE()
@@ -190,7 +295,9 @@ class LicenseHelper:
         ).sign(private_key, hashes.SHA256())
         
         csr_pem = csr.public_bytes(serialization.Encoding.PEM)
-        with open(csrFilePath, "wb") as f:
+        csr_p = Path(csrFilePath)
+        csr_p.parent.mkdir(parents=True, exist_ok=True)
+        with open(csr_p, "wb") as f:
             f.write(csr_pem)
 
         # 5. 取出 Private Key, 再使用 AES 加密 Private Key
@@ -212,6 +319,7 @@ class LicenseHelper:
             "encrypedAESKey": encrypedAESKey.hex(),
             "encryptedPrivateKey": encryptedPrivateKey.hex(),
         }
+        LICENSE_BINDING_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(LICENSE_BINDING_PATH, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=4)
 

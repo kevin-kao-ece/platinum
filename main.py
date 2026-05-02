@@ -1,29 +1,30 @@
-import os
+import sys
 import threading
 import time
+import signal
 import yaml
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from itService import ItServiceHandler
-from logHelper import logger, reconfigure_logging_from_cfg
+from logHelper import app_base_dir, logger, reconfigure_logging_from_cfg
 from melsec import MelsecHandler, max_connections_from_config
 from web import WEB_BIND_HOST, WEB_BIND_PORT, WebAPI
 from licenseHelp import (
     PRODUCT_ID,
     LicenseHelper,
-    LICENSE_CRT_PATH,
+    existing_license_crt_path,
     load_license_binding_meta,
 )
 
-_defaultConfigFile = Path("/config.yaml")
-_alterConfigFile = Path("config.yaml")
-
-TRIAL_SECONDS = 60
+TRIAL_SECONDS = 3600
 
 def resolve_config_path() -> Path:
-    if _defaultConfigFile.exists():
-        return _defaultConfigFile
-    return _alterConfigFile
+    primary = Path("/config.yaml")
+    if primary.exists():
+        return primary
+    if getattr(sys, "frozen", False):
+        return app_base_dir() / "config.yaml"
+    return Path("config.yaml")
 
 class Controller:
     """PLC 輪詢 + Influx/Mongo；Web 固定埠，軟重載不結束行程。"""
@@ -38,6 +39,7 @@ class Controller:
         self._poll_stop = threading.Event()
         self._poll_thread: threading.Thread | None = None
         self._reload_lock = threading.Lock()
+        self._shutdown = threading.Event()
         self.license_status = False
         self.start_time = None
         self.running_status = "starting"
@@ -46,7 +48,8 @@ class Controller:
     def _loadConfig(self) -> dict:
         if not self.config_path.exists():
             raise FileNotFoundError(
-                "Config file not found: /config.yaml or ./config.yaml"
+                "Config file not found: /config.yaml, ./config.yaml (dev), "
+                "or config.yaml next to the executable (frozen)"
             )
         with open(self.config_path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
@@ -196,8 +199,11 @@ class Controller:
                 break
 
             if self.itServiceHandler:
-                self.itServiceHandler.insertMessageToInfluxDB(current_loop_data)
-                self.itServiceHandler.insertMessageToMongoDB(current_loop_data)
+                try:
+                    self.itServiceHandler.insertMessageToInfluxDB(current_loop_data)
+                    self.itServiceHandler.insertMessageToMongoDB(current_loop_data)
+                except Exception as e:
+                    logger.error("資料後端寫入例外（略過本輪，繼續輪詢）: %s", e)
 
             elapsed = time.time() - start_time
             wait = max(0.0, poll_interval - elapsed)
@@ -218,11 +224,12 @@ class Controller:
     
     def check_license(self):
         try:
-            if not LICENSE_CRT_PATH.is_file():
-                logger.info("license.crt not found at %s", LICENSE_CRT_PATH)
+            crt = existing_license_crt_path()
+            if crt is None:
+                logger.info("license.crt not found (artifact dir or exe dir)")
                 return False
 
-            cert_bytes = LICENSE_CRT_PATH.read_bytes()
+            cert_bytes = crt.read_bytes()
 
             meta = load_license_binding_meta()
             if meta is None:
@@ -265,8 +272,7 @@ class Controller:
             if self.remain_time <= 0:
                 self.running_status = "stop"
                 logger.warning("License expired. Shutting down...")
-                self.stop_tags_loop()
-                self.disconnect_data_services()
+                self.request_shutdown()
                 
 
     def start(self) -> None:
@@ -286,13 +292,38 @@ class Controller:
         self.web.run_daemon()
         logger.info("Web UI: http://%s:%s", WEB_BIND_HOST, WEB_BIND_PORT)
 
-        while True:
+        while not self._shutdown.is_set():
             self._tick_license()
             time.sleep(1)
 
+        logger.info("Shutdown requested. Cleaning up...")
+        self.stop_tags_loop()
+        self.disconnect_data_services()
+
+    def request_shutdown(self) -> None:
+        self._shutdown.set()
+
 if __name__ == "__main__":
+    controller = None
     try:
         controller = Controller()
+
+        def _handle_stop(signum, frame):
+            logger.info("Received signal %s, requesting shutdown...", signum)
+            try:
+                controller.request_shutdown()
+            except Exception:
+                pass
+
+        for _name in ("SIGINT", "SIGTERM", "SIGBREAK"):
+            _sig = getattr(signal, _name, None)
+            if _sig is None:
+                continue
+            try:
+                signal.signal(_sig, _handle_stop)
+            except Exception:
+                pass
+
         controller.start()
     except KeyboardInterrupt:
         logger.info("Shutdown by user.")

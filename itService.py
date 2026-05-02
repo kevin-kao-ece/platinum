@@ -76,15 +76,14 @@ class ItServiceHandler:
             logger.debug(point)
             self.influxDBWriteApi.write(bucket=self.influxDBBucket, org=self.influxDBOrg, record=point)
         except Exception as error:
-            logger.error(str(error))
-            raise Exception(error)  
-    
+            # 勿 raise：開機初期網路／後端未就緒時，raise 會讓 main 輪詢執行緒結束，PLC 也不再重試。
+            logger.error("InfluxDB write failed: %s", error)
+
     def insertMessageToMongoDB(self, document):
         try:
             result = self.mongoCollection.insert_one(document)
             bson_size = len(bson_encode(document))
             logger.debug(f"Size of data: {bson_size} bytes")
         except Exception as error:
-            logger.error(str(error))
-            raise Exception(error)
+            logger.error("MongoDB insert failed: %s", error)
 
