@@ -56,13 +56,33 @@ def validate_platinum_config(data: Any) -> dict:
     """匯入前基本結構檢查。"""
     if not isinstance(data, dict):
         raise ValueError("設定根節點必須為 mapping")
-    for key in ("app", "influxdb", "mongodb", "melsec"):
+    for key in ("app", "influxdb", "mongodb"):
         if key not in data or not isinstance(data[key], dict):
             raise ValueError(f"缺少或無效的區段: {key}")
-    tags = data["melsec"].get("tags")
-    if not isinstance(tags, dict) or not tags:
-        raise ValueError("melsec.tags 必須為非空 mapping")
-    return data
+
+    melsecs_list = data.get("melsecs")
+    legacy = data.get("melsec")
+
+    if isinstance(melsecs_list, list) and len(melsecs_list) > 0:
+        if len(melsecs_list) > 2:
+            raise ValueError("melsecs 最多支援 2 台 PLC")
+        for i, plc in enumerate(melsecs_list):
+            if not isinstance(plc, dict):
+                raise ValueError(f"melsecs[{i}] 必須為 mapping")
+            if plc.get("name") in (None, "") or plc.get("ip") in (None, ""):
+                raise ValueError(f"melsecs[{i}] 必須包含有效的 name 與 ip")
+            tags = plc.get("tags")
+            if not isinstance(tags, dict) or not tags:
+                raise ValueError(f"melsecs[{i}].tags 必須為非空 mapping")
+        return data
+
+    if isinstance(legacy, dict) and legacy:
+        tags = legacy.get("tags")
+        if not isinstance(tags, dict) or not tags:
+            raise ValueError("melsec.tags 必須為非空 mapping")
+        return data
+
+    raise ValueError("必須提供 melsec（單台）或 melsecs（1～2 台）")
 
 
 class WSManager:

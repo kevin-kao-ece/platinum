@@ -7,7 +7,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from itService import ItServiceHandler
 from logHelper import app_base_dir, logger, reconfigure_logging_from_cfg
-from melsec import MelsecHandler, max_connections_from_config
+from melsec import (
+    MelsecHandler,
+    max_connections_from_config,
+    normalize_plc_configs,
+)
 from web import WEB_BIND_HOST, WEB_BIND_PORT, WebAPI
 from licenseHelp import (
     PRODUCT_ID,
@@ -33,11 +37,11 @@ class Controller:
         self.config_path = resolve_config_path()
         self.cfg = self._loadConfig()
         self.web: WebAPI | None = None
-        self.melsecHandler = None
+        self.melsec_handlers: list[MelsecHandler | None] = []
         self.itServiceHandler = None
         self.executor: ThreadPoolExecutor | None = None
         self._poll_stop = threading.Event()
-        self._poll_thread: threading.Thread | None = None
+        self._plc_threads: list[threading.Thread] = []
         self._reload_lock = threading.Lock()
         self._shutdown = threading.Event()
         self.license_status = False
@@ -60,12 +64,13 @@ class Controller:
     def stop_tags_loop(self) -> None:
         """停止輪詢執行緒並關閉 thread pool。"""
         self._poll_stop.set()
-        t = self._poll_thread
-        if t is not None and t.is_alive():
-            t.join(timeout=60.0)
+        threads = list(self._plc_threads)
+        for t in threads:
             if t.is_alive():
-                logger.warning("輪詢執行緒在逾時後仍未結束")
-        self._poll_thread = None
+                t.join(timeout=60.0)
+                if t.is_alive():
+                    logger.warning("PLC 輪詢執行緒 %s 在逾時後仍未結束", t.name)
+        self._plc_threads = []
         self._poll_stop.clear()
 
         ex = self.executor
@@ -85,58 +90,79 @@ class Controller:
                 logger.warning("關閉 ItService 時例外: %s", e)
             self.itServiceHandler = None
 
-        if self.melsecHandler is not None:
+        for h in self.melsec_handlers:
+            if h is None:
+                continue
             try:
-                self.melsecHandler.close()
+                h.close()
             except Exception as e:
                 logger.warning("關閉 Melsec 時例外: %s", e)
-            self.melsecHandler = None
+        self.melsec_handlers = []
 
     def reconnect_data_services(self) -> None:
         """依目前 self.cfg 建立新的 ItServiceHandler。"""
         self.itServiceHandler = ItServiceHandler(self.cfg)
 
-    def _initMelsecHandler(self) -> None:
-        melsec = self.cfg.get("melsec", {})
-        try:
-            self.melsecHandler = MelsecHandler(melsec["name"], melsec)
-            n = self.melsecHandler.max_connections
-            logger.info(
-                "Initialized MELSEC PLC: %s at %s (%s connection session%s)",
-                melsec["name"],
-                melsec["ip"],
-                n,
-                "s" if n != 1 else "",
-            )
-        except Exception as e:
-            melsec_name = melsec.get("name", "Unknown")
-            logger.error("Failed to initialize PLC %s: %s", melsec_name, e)
+    def _initMelsecHandlers(self) -> None:
+        self.melsec_handlers = []
+        for plc_cfg in normalize_plc_configs(self.cfg):
+            name = plc_cfg.get("name", "Unknown")
+            try:
+                handler = MelsecHandler(name, plc_cfg)
+                self.melsec_handlers.append(handler)
+                n = handler.max_connections
+                logger.info(
+                    "Initialized MELSEC PLC: %s at %s (%s connection session%s)",
+                    name,
+                    plc_cfg.get("ip"),
+                    n,
+                    "s" if n != 1 else "",
+                )
+            except Exception as e:
+                logger.error("Failed to initialize PLC %s: %s", name, e)
+                self.melsec_handlers.append(None)
 
     def start_tags_loop(self) -> None:
-        """依 melsec.tags 建立 executor 並啟動輪詢執行緒。"""
-        if self._poll_thread is not None and self._poll_thread.is_alive():
-            logger.warning("tags 輪詢已在執行中，略過重複啟動")
+        """依每台 PLC 的 tags 啟動各自輪詢執行緒（互不影響）。"""
+        if any(t.is_alive() for t in self._plc_threads):
+            logger.warning("PLC 輪詢已在執行中，略過重複啟動")
             return
         if self.executor is not None:
             logger.warning("executor 仍存在，請先 stop_tags_loop")
             return
 
-        melsec_cfg = self.cfg.get("melsec", {})
-        pool_size = (
-            self.melsecHandler.max_connections
-            if self.melsecHandler
-            else max_connections_from_config(melsec_cfg)
-        )
+        plc_cfgs = normalize_plc_configs(self.cfg)
+        if not plc_cfgs:
+            logger.error("設定中找不到 PLC（melsec 或 melsecs）")
+            return
+
+        if self.melsec_handlers:
+            pool_size = sum(
+                (h.max_connections if h is not None else 0)
+                for h in self.melsec_handlers
+            )
+        else:
+            pool_size = sum(max_connections_from_config(p) for p in plc_cfgs)
+        pool_size = max(1, pool_size)
         self.executor = ThreadPoolExecutor(max_workers=pool_size)
         self._poll_stop.clear()
-        self._poll_thread = threading.Thread(
-            target=self._run_polling_loop,
-            name="tags-loop",
-            daemon=True,
-        )
-        self._poll_thread.start()
+
+        self._plc_threads = []
+        for idx, plc_cfg in enumerate(plc_cfgs):
+            handler = self.melsec_handlers[idx] if idx < len(self.melsec_handlers) else None
+            name = plc_cfg.get("name", f"PLC_{idx+1}")
+            t = threading.Thread(
+                target=self._run_single_plc_loop,
+                args=(plc_cfg, handler),
+                name=f"plc-loop-{name}",
+                daemon=True,
+            )
+            self._plc_threads.append(t)
+            t.start()
+
         logger.info(
-            "PLC polling thread started (pool size = %s).",
+            "PLC polling threads started (%s PLC, pool size = %s).",
+            len(self._plc_threads),
             pool_size,
         )
 
@@ -161,7 +187,7 @@ class Controller:
                 self.reload_config_from_disk()
                 reconfigure_logging_from_cfg(self.cfg)
                 self.reconnect_data_services()
-                self._initMelsecHandler()
+                self._initMelsecHandlers()
                 self.start_tags_loop()
                 self.running_status = "running"
                 logger.info("重載完成")
@@ -170,40 +196,54 @@ class Controller:
                 logger.critical("重載失敗: %s", e)
                 raise
 
-    def _run_polling_loop(self) -> None:
-        poll_interval = self.cfg.get("melsec", {}).get("poll_interval", 3.0)
-        self.running_status = "running"
+    def _run_single_plc_loop(self, plc_cfg: dict, handler: MelsecHandler | None) -> None:
+        """單台 PLC 輪詢迴圈：連線/timeout 只影響本 PLC，不拖慢其他 PLC。"""
+        name = plc_cfg.get("name", "Unknown")
+        try:
+            poll_interval = float(plc_cfg.get("poll_interval", 3.0))
+        except (TypeError, ValueError):
+            poll_interval = 3.0
+
         while not self._poll_stop.is_set():
             start_time = time.time()
-            logger.debug("Start polling loop at %s", start_time)
+            plc_payload: dict = {"name": name}
 
-            current_loop_data: dict = {}
-            current_loop_data["name"] = self.cfg.get("melsec", {}).get("name")
+            ex = self.executor
+            if ex is None:
+                break
 
+            tags = plc_cfg.get("tags", {}) or {}
             futures = []
-            tags = self.cfg.get("melsec", {}).get("tags", {})
             for tag_name, details in tags.items():
                 if self._poll_stop.is_set():
                     break
-                f = self.executor.submit(
-                    self.poll_tag, tag_name, details, current_loop_data
+                futures.append(
+                    ex.submit(
+                        self.poll_tag,
+                        handler,
+                        tag_name,
+                        details,
+                        plc_payload,
+                    )
                 )
-                futures.append(f)
 
             for f in futures:
                 if self._poll_stop.is_set():
                     break
-                f.result()
+                try:
+                    f.result()
+                except Exception as e:
+                    logger.error("PLC [%s] tag 任務例外: %s", name, e)
 
             if self._poll_stop.is_set():
                 break
 
-            if self.itServiceHandler:
+            if self.itServiceHandler and len(plc_payload) > 1:
                 try:
-                    self.itServiceHandler.insertMessageToInfluxDB(current_loop_data)
-                    self.itServiceHandler.insertMessageToMongoDB(current_loop_data)
+                    self.itServiceHandler.insertMessageToInfluxDB(plc_payload)
+                    self.itServiceHandler.insertMessageToMongoDB(plc_payload)
                 except Exception as e:
-                    logger.error("資料後端寫入例外（略過本輪，繼續輪詢）: %s", e)
+                    logger.error("PLC [%s] 資料後端寫入例外（略過本輪）: %s", name, e)
 
             elapsed = time.time() - start_time
             wait = max(0.0, poll_interval - elapsed)
@@ -211,16 +251,23 @@ class Controller:
             while time.time() < end and not self._poll_stop.is_set():
                 time.sleep(0.05)
 
-        logger.info("輪詢迴圈已結束（stop_tags_loop）")
+        logger.info("PLC [%s] 輪詢迴圈已結束（stop_tags_loop）", name)
 
-    def poll_tag(self, tag_name: str, details: dict, result_dict: dict) -> None:
-        if self.melsecHandler:
-            try:
-                val = self.melsecHandler.read(tag_name, details)
-                if val is not None:
-                    result_dict[tag_name] = val
-            except Exception as e:
-                logger.error("Poll error on %s: %s", tag_name, e)
+    def poll_tag(
+        self,
+        handler: MelsecHandler | None,
+        tag_name: str,
+        details: dict,
+        result_dict: dict,
+    ) -> None:
+        if handler is None:
+            return
+        try:
+            val = handler.read(tag_name, details)
+            if val is not None:
+                result_dict[tag_name] = val
+        except Exception as e:
+            logger.error("Poll error on %s: %s", tag_name, e)
     
     def check_license(self):
         try:
@@ -284,7 +331,7 @@ class Controller:
         else:
             logger.info("Running on Trial License, remain time: %s seconds", self.remain_time)
 
-        self._initMelsecHandler()
+        self._initMelsecHandlers()
         self.itServiceHandler = ItServiceHandler(self.cfg)
         self.start_tags_loop()
 

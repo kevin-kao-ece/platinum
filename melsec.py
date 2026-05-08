@@ -4,6 +4,44 @@ import time
 from pymcprotocol import Type3E, Type4E
 from logHelper import logger
 
+MAX_PLCS = 2
+
+def normalize_plc_configs(cfg: dict) -> list[dict]:
+    """
+    回傳 1～2 個 PLC 設定（與 legacy 單一 `melsec` 區塊相同欄位）。
+    優先使用 `melsecs`（list）；若無則使用 `melsec`（dict）。
+    """
+    raw_list = cfg.get("melsecs")
+    if isinstance(raw_list, list) and raw_list:
+        out: list[dict] = []
+        for item in raw_list[:MAX_PLCS]:
+            if isinstance(item, dict):
+                out.append(item)
+        if len(raw_list) > MAX_PLCS:
+            logger.warning(
+                "設定 melsecs 共有 %s 項，僅使用前 %s 台",
+                len(raw_list),
+                MAX_PLCS,
+            )
+        return out
+
+    single = cfg.get("melsec")
+    if isinstance(single, dict) and single:
+        return [single]
+    return []
+
+def effective_poll_interval(plc_configs: list[dict], default: float = 3.0) -> float:
+    """多 PLC 時取各台 poll_interval 的最小值（一輪結束後等待時間）。"""
+    intervals: list[float] = []
+    for p in plc_configs:
+        raw = p.get("poll_interval", default)
+        try:
+            intervals.append(float(raw))
+        except (TypeError, ValueError):
+            intervals.append(default)
+    return min(intervals) if intervals else default
+
+
 def max_connections_from_config(plc_config: dict) -> int:
     """Shared parser for `melsec.max_connections` (PLC sessions = poll thread pool size)."""
     raw = plc_config.get("max_connections", 1)
@@ -16,8 +54,15 @@ def max_connections_from_config(plc_config: dict) -> int:
 class MelsecSession:
     """Single TCP session to the PLC (one Type3E/4E client)."""
 
+    @staticmethod
+    def _words_as_unsigned_le_bytes(data):
+        """Word devices are 16-bit; pymcprotocol may return signed ints — normalize for struct.pack('<H')."""
+        u = [(int(w) & 0xFFFF) for w in data]
+        return struct.pack(f"<{len(u)}H", *u)
+
     def __init__(self, plc_config, session_id=0):
         self.session_id = session_id
+        self.plc_name = str(plc_config.get("name") or "Unknown")
         self.ip = plc_config["ip"]
         self.port = plc_config.get("port", 1025)
         frame = plc_config.get("frame_type", "3E")
@@ -65,18 +110,24 @@ class MelsecSession:
                     self.is_connected = True
                     if attempt > 0:
                         logger.info(
-                            "PLC session %s connected after %s attempts",
+                            "PLC [%s] session %s connected after %s attempts (%s:%s)",
+                            self.plc_name,
                             self.session_id,
                             attempt + 1,
+                            self.ip,
+                            self.port,
                         )
                     return True
                 except Exception as e:
                     last_err = e
                     logger.warning(
-                        "PLC connect attempt %s/%s (session %s): %s",
+                        "PLC [%s] connect attempt %s/%s (session %s, %s:%s): %s",
+                        self.plc_name,
                         attempt + 1,
                         self._connect_retries,
                         self.session_id,
+                        self.ip,
+                        self.port,
                         e,
                     )
                     self.is_connected = False
@@ -84,9 +135,12 @@ class MelsecSession:
                         time.sleep(delay)
                         delay = min(delay * 1.7, 20.0)
             logger.error(
-                "PLC connect failed after %s attempts (session %s): %s",
+                "PLC [%s] connect failed after %s attempts (session %s, %s:%s): %s",
+                self.plc_name,
                 self._connect_retries,
                 self.session_id,
+                self.ip,
+                self.port,
                 last_err,
             )
             return False
@@ -110,33 +164,21 @@ class MelsecSession:
                     data = self.plc.batchread_wordunits(
                         headdevice=device, readsize=length
                     )
-                    raw_bytes = struct.pack(f"<{len(data)}H", *data)
+                    raw_bytes = self._words_as_unsigned_le_bytes(data)
                     return raw_bytes.split(b"\x00")[0].decode(
                         "ascii", errors="ignore"
                     )
 
                 elif dtype in self.type_map:
-                    words_count, _fmt = self.type_map[dtype]
+                    words_count, fmt = self.type_map[dtype]
                     data = self.plc.batchread_wordunits(
                         headdevice=device, readsize=words_count
                     )
                     if len(data) < words_count:
                         return None
 
-                    raw_bytes = struct.pack(f"<{len(data)}H", *data)
-                    if dtype == "float":
-                        value = struct.unpack("<f", raw_bytes)[0]
-                    elif dtype == "double":
-                        value = struct.unpack("<d", raw_bytes)[0]
-                    elif dtype == "uint16":
-                        value = data[0]
-                    elif dtype == "uint32":
-                        value = struct.unpack("<I", raw_bytes)[0]
-                    elif dtype == "int16":
-                        value = struct.unpack("<h", raw_bytes)[0]
-                    elif dtype == "int32":
-                        value = struct.unpack("<i", raw_bytes)[0]
-                    return value
+                    raw_bytes = self._words_as_unsigned_le_bytes(data)
+                    return struct.unpack(fmt, raw_bytes)[0]
 
                 logger.error(
                     f"Read unsupported datatype [{device}]: {dtype!r}"
@@ -176,7 +218,8 @@ class MelsecSession:
                     raw = struct.pack(fmt, val)
                     words = struct.unpack(f"<{words_count}H", raw)
                     self.plc.batchwrite_wordunits(
-                        headdevice=device, values=list(words)
+                        headdevice=device,
+                        values=[int(w) & 0xFFFF for w in words],
                     )
                 else:
                     logger.error(
@@ -199,7 +242,12 @@ class MelsecSession:
                 if callable(close_fn):
                     close_fn()
             except Exception as e:
-                logger.error(f"PLC session {self.session_id} close: {e}")
+                logger.error(
+                    "PLC [%s] session %s close: %s",
+                    self.plc_name,
+                    self.session_id,
+                    e,
+                )
             finally:
                 self.is_connected = False
 

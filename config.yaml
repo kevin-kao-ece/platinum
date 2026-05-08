@@ -20,28 +20,50 @@ mongodb:
   user: admin
   password: admin@123
 
-melsec:
-  # name 用於 influxdb 的 TAGS
-  name: PLC_01
-  ip: 20.6.35.107
-  port: 6001
-  frame_type: 3E
-  # 同時 TCP 連線數 = 輪詢 tag 的 thread pool 大小（請勿超過 PLC 允許的上限）
-  max_connections: 1
-  poll_interval: 5.0
-  # 開機／網路尚未就緒時 TCP 連線重試（每次 read/write 前連線）
-  # connect_retries: 12
-  # connect_retry_delay_sec: 1.5
-  tags:
-    motorStartStop:
-      access: write
-      device: Y0
-      datatype: bool
-    targetSpeed:
-      access: write
-      device: D14
-      datatype: uint16
-    motorCurrent:
-      access: read
-      device: D12
-      datatype: float 
+melsecs:
+  # name 用於 influxdb 的 TAGS（每台 PLC 各寫一筆 point／document）
+  - name: PLC_01
+    ip: 20.6.35.107
+    port: 6001
+    frame_type: 3E
+    # 同時 TCP 連線數 = 輪詢 tag 的 thread pool 大小（請勿超過 PLC 允許的上限）
+    max_connections: 1
+    poll_interval: 5.0
+    # 開機／網路尚未就緒時 TCP 連線重試（每次 read/write 前連線）
+    connect_retries: 3
+    connect_retry_delay_sec: 0.5
+    tags:
+      motorStartStop:
+        access: write
+        device: Y0
+        datatype: bool
+      targetSpeed:
+        access: write
+        device: D14
+        datatype: uint16
+      motorCurrent:
+        access: read
+        device: D12
+        datatype: float
+      motorSpeed:
+        access: read
+        device: D10
+        datatype: float 
+  #- name: PLC_02
+  #   ip: 20.6.35.108
+  #  port: 6001
+  #  frame_type: 3E
+  #  tags: 1
+  #  tags:
+  #    motorStartStop:
+  #      access: write
+  #      device: Y0
+  #      datatype: bool
+  #    targetSpeed:
+  #      access: write
+  #      device: D14
+  #      datatype: uint16
+  #    motorCurrent:
+  #      access: read
+  #      device: D12
+  #      datatype: float 
