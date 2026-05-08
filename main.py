@@ -39,7 +39,8 @@ class Controller:
         self.web: WebAPI | None = None
         self.melsec_handlers: list[MelsecHandler | None] = []
         self.itServiceHandler = None
-        self.executor: ThreadPoolExecutor | None = None
+        # 每台 PLC 各自一個 executor，避免某台 PLC 連線/重試卡住時拖慢其他 PLC 的 tag 任務排程
+        self._plc_executors: list[ThreadPoolExecutor | None] = []
         self._poll_stop = threading.Event()
         self._plc_threads: list[threading.Thread] = []
         self._reload_lock = threading.Lock()
@@ -73,13 +74,15 @@ class Controller:
         self._plc_threads = []
         self._poll_stop.clear()
 
-        ex = self.executor
-        if ex is not None:
+        executors = list(self._plc_executors)
+        self._plc_executors = []
+        for ex in executors:
+            if ex is None:
+                continue
             try:
                 ex.shutdown(wait=True, cancel_futures=True)
             except TypeError:
                 ex.shutdown(wait=True)
-            self.executor = None
 
     def disconnect_data_services(self) -> None:
         """關閉 Influx/Mongo 與 PLC 連線。"""
@@ -127,33 +130,28 @@ class Controller:
         if any(t.is_alive() for t in self._plc_threads):
             logger.warning("PLC 輪詢已在執行中，略過重複啟動")
             return
-        if self.executor is not None:
-            logger.warning("executor 仍存在，請先 stop_tags_loop")
-            return
 
         plc_cfgs = normalize_plc_configs(self.cfg)
         if not plc_cfgs:
             logger.error("設定中找不到 PLC（melsec 或 melsecs）")
             return
 
-        if self.melsec_handlers:
-            pool_size = sum(
-                (h.max_connections if h is not None else 0)
-                for h in self.melsec_handlers
-            )
-        else:
-            pool_size = sum(max_connections_from_config(p) for p in plc_cfgs)
-        pool_size = max(1, pool_size)
-        self.executor = ThreadPoolExecutor(max_workers=pool_size)
         self._poll_stop.clear()
 
         self._plc_threads = []
+        self._plc_executors = []
         for idx, plc_cfg in enumerate(plc_cfgs):
             handler = self.melsec_handlers[idx] if idx < len(self.melsec_handlers) else None
             name = plc_cfg.get("name", f"PLC_{idx+1}")
+            if handler is not None:
+                pool_size = max(1, int(getattr(handler, "max_connections", 1)))
+            else:
+                pool_size = max(1, max_connections_from_config(plc_cfg))
+            ex = ThreadPoolExecutor(max_workers=pool_size)
+            self._plc_executors.append(ex)
             t = threading.Thread(
                 target=self._run_single_plc_loop,
-                args=(plc_cfg, handler),
+                args=(plc_cfg, handler, ex),
                 name=f"plc-loop-{name}",
                 daemon=True,
             )
@@ -161,9 +159,8 @@ class Controller:
             t.start()
 
         logger.info(
-            "PLC polling threads started (%s PLC, pool size = %s).",
+            "PLC polling threads started (%s PLC; per-PLC executors).",
             len(self._plc_threads),
-            pool_size,
         )
 
     def soft_reload_runtime(self) -> None:
@@ -196,7 +193,12 @@ class Controller:
                 logger.critical("重載失敗: %s", e)
                 raise
 
-    def _run_single_plc_loop(self, plc_cfg: dict, handler: MelsecHandler | None) -> None:
+    def _run_single_plc_loop(
+        self,
+        plc_cfg: dict,
+        handler: MelsecHandler | None,
+        executor: ThreadPoolExecutor,
+    ) -> None:
         """單台 PLC 輪詢迴圈：連線/timeout 只影響本 PLC，不拖慢其他 PLC。"""
         name = plc_cfg.get("name", "Unknown")
         try:
@@ -208,17 +210,13 @@ class Controller:
             start_time = time.time()
             plc_payload: dict = {"name": name}
 
-            ex = self.executor
-            if ex is None:
-                break
-
             tags = plc_cfg.get("tags", {}) or {}
             futures = []
             for tag_name, details in tags.items():
                 if self._poll_stop.is_set():
                     break
                 futures.append(
-                    ex.submit(
+                    executor.submit(
                         self.poll_tag,
                         handler,
                         tag_name,

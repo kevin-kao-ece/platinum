@@ -56,8 +56,8 @@ melsecs:
     frame_type: 3E
     max_connections: 1
     poll_interval: 5.0
-    connect_retries: 3
-    connect_retry_delay_sec: 0.5
+    connect_retries: 1
+    connect_retry_delay_sec: 0.1
     tags:
       motorStartStop:
         access: write
