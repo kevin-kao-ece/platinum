@@ -32,8 +32,25 @@ class ItServiceHandler:
             mongoDB_database = cfg.get("mongodb", {}).get("database")
             mongoDB_collection = cfg.get("mongodb", {}).get("collection")
 
+            # MongoDB 超時設定（避免 MongoDB down 時 insert 卡太久）
+            # - serverSelectionTimeoutMS: 找不到 server 的等待上限
+            # - connectTimeoutMS: TCP connect 上限
+            # - socketTimeoutMS: 單次 socket read/write 上限（影響 insert_one 等操作）
+            mongodb_cfg = cfg.get("mongodb", {}) or {}
+            try:
+                mongo_timeout_ms = int(mongodb_cfg.get("timeout_ms", 2000))
+            except (TypeError, ValueError):
+                mongo_timeout_ms = 2000
+            mongo_timeout_ms = max(200, mongo_timeout_ms)
+
             mongodb_URL = f"mongodb://{mongoDB_username}:{mongoDB_password}@{mongoDB_host}:{mongoDB_port}/"
-            mongodb_client = MongoClient(mongodb_URL)
+            mongodb_client = MongoClient(
+                mongodb_URL,
+                serverSelectionTimeoutMS=mongo_timeout_ms,
+                connectTimeoutMS=mongo_timeout_ms,
+                socketTimeoutMS=mongo_timeout_ms,
+                retryWrites=False,
+            )
             self._mongo_client = mongodb_client
 
             # Select database and collection
@@ -81,7 +98,8 @@ class ItServiceHandler:
 
     def insertMessageToMongoDB(self, document):
         try:
-            result = self.mongoCollection.insert_one(document)
+            # 若 MongoDB 不可用，socketTimeoutMS 會限制卡住時間
+            self.mongoCollection.insert_one(document)
             bson_size = len(bson_encode(document))
             logger.debug(f"Size of data: {bson_size} bytes")
         except Exception as error:
