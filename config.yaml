@@ -2,7 +2,6 @@ app:
   app_name: neoedgex_melsec_bridge
   log_level: DEBUG
   log_file_count: 30
-
 influxdb:
   url: http://127.0.0.1:8086
   token: f9d8b2e7-6a1c-4e92-99d2-cb9f3a1d5b7e
@@ -11,7 +10,6 @@ influxdb:
   user: admin
   password: admin@123
   measurement: PLC
-
 mongodb:
   host: 127.0.0.1
   port: 27017
@@ -20,58 +18,54 @@ mongodb:
   user: admin
   password: admin@123
   timeout_ms: 1000
-
 melsecs:
-  # name 用於 influxdb 的 TAGS（每台 PLC 各寫一筆 point／document）
-  - name: PLC_01
-    ip: 20.6.35.107
-    port: 6001
-    frame_type: 3E
-    # 同時 TCP 連線數 = 輪詢 tag 的 thread pool 大小（請勿超過 PLC 允許的上限）
-    max_connections: 1
-    poll_interval: 5.0
-    # 開機／網路尚未就緒時 TCP 連線重試（每次 read/write 前連線）
-    connect_retries: 3
-    connect_retry_delay_sec: 0.5
-    tags:
-      motorStartStop:
-        access: write
-        device: Y0
-        datatype: bool
-      targetSpeed:
-        access: write
-        device: D14
-        datatype: uint16
-      motorCurrent:
-        access: read
-        device: D12
-        datatype: float
-      motorSpeed:
-        access: read
-        device: D10
-        datatype: float 
-  - name: PLC_02
-    ip: 20.6.35.108
-    port: 6001
-    frame_type: 3E
-    max_connections: 1
-    poll_interval: 5.0
-    connect_retries: 1
-    connect_retry_delay_sec: 0.1
-    tags:
-      motorStartStop:
-        access: write
-        device: Y0
-        datatype: bool
-      targetSpeed:
-        access: write
-        device: D14
-        datatype: uint16
-      motorCurrent:
-        access: read
-        device: D12
-        datatype: float
-      motorSpeed:
-        access: read
-        device: D10
-        datatype: float
+- name: PLC_01
+  ip: 20.6.35.107
+  port: 16002
+  frame_type: 3E
+  max_connections: 1
+  poll_interval: 5.0
+  connect_retries: 3
+  connect_retry_delay_sec: 0.5
+  tags:
+    motorStartStop:
+      access: write
+      device: Y0
+      datatype: bool
+    targetSpeed:
+      access: write
+      device: D14
+      datatype: uint16
+    motorCurrent:
+      access: read
+      device: D12
+      datatype: float
+    motorSpeed:
+      access: read
+      device: D10
+      datatype: float
+- name: PLC_02
+  ip: 20.6.35.107
+  port: 16002
+  frame_type: 3E
+  max_connections: 1
+  poll_interval: 5.0
+  connect_retries: 1
+  connect_retry_delay_sec: 0.1
+  tags:
+    motorStartStop:
+      access: write
+      device: Y0
+      datatype: bool
+    targetSpeed:
+      access: write
+      device: D14
+      datatype: uint16
+    motorCurrent:
+      access: read
+      device: D12
+      datatype: float
+    motorSpeed:
+      access: read
+      device: D10
+      datatype: float

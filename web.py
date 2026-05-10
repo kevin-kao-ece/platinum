@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 import asyncio
+import copy
+import csv
 import io
 import sys
 import threading
@@ -11,7 +13,7 @@ from typing import Any
 
 import uvicorn
 import yaml
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, Body, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -83,6 +85,222 @@ def validate_platinum_config(data: Any) -> dict:
         return data
 
     raise ValueError("必須提供 melsec（單台）或 melsecs（1～2 台）")
+
+
+def _defaults_plc_slot() -> dict[str, Any]:
+    return {
+        "name": "",
+        "ip": "",
+        "port": 6001,
+        "frame_type": "3E",
+        "max_connections": 1,
+        "poll_interval": 5.0,
+        "connect_retries": 3,
+        "connect_retry_delay_sec": 0.5,
+        "tags": {},
+    }
+
+
+def _normalize_tag_header(key: str) -> str:
+    k = (key or "").strip().lower().replace(" ", "_")
+    aliases = {
+        "tag": "tag_name",
+        "tagname": "tag_name",
+        "name": "tag_name",
+    }
+    return aliases.get(k, k)
+
+
+def _tags_dict_from_csv_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
+    tags: dict[str, Any] = {}
+    for row in rows:
+        norm = {_normalize_tag_header(k): (v or "").strip() for k, v in row.items() if k}
+        name = norm.get("tag_name", "").strip()
+        if not name:
+            continue
+        access = norm.get("access", "").strip().lower()
+        device = norm.get("device", "").strip()
+        datatype = norm.get("datatype", "").strip().lower()
+        if access not in ("read", "write"):
+            raise ValueError(f"標籤「{name}」access 須為 read 或 write")
+        if not device:
+            raise ValueError(f"標籤「{name}」缺少 device")
+        if not datatype:
+            raise ValueError(f"標籤「{name}」缺少 datatype")
+        tags[name] = {"access": access, "device": device, "datatype": datatype}
+    if not tags:
+        raise ValueError("CSV 無有效標籤列（需含 tag_name, access, device, datatype）")
+    return tags
+
+
+def _ensure_melsecs_list(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_list = cfg.get("melsecs")
+    if isinstance(raw_list, list) and raw_list:
+        out = [x for x in raw_list if isinstance(x, dict)]
+        cfg["melsecs"] = out
+        if "melsec" in cfg:
+            del cfg["melsec"]
+        return cfg["melsecs"]
+
+    single = cfg.get("melsec")
+    if isinstance(single, dict) and single:
+        cfg["melsecs"] = [copy.deepcopy(single)]
+        del cfg["melsec"]
+        return cfg["melsecs"]
+
+    raise ValueError("設定中無有效的 melsec / melsecs")
+
+
+def _ensure_second_plc_stub(cfg: dict[str, Any]) -> None:
+    m = _ensure_melsecs_list(cfg)
+    if len(m) >= 2:
+        return
+    first = m[0]
+    base_tags = copy.deepcopy(first.get("tags") or {})
+    if not base_tags:
+        raise ValueError("第一台 PLC 無標籤，無法自動建立第二台（請先設定標籤）")
+    two_name = "PLC_02"
+    names = {str(x.get("name", "")) for x in m}
+    if two_name in names:
+        two_name = "PLC_02b"
+    m.append(
+        {
+            "name": two_name,
+            "ip": "",
+            "port": int(first.get("port", 6001) or 6001),
+            "frame_type": str(first.get("frame_type", "3E") or "3E"),
+            "max_connections": int(first.get("max_connections", 1) or 1),
+            "poll_interval": float(first.get("poll_interval", 5.0) or 5.0),
+            "connect_retries": int(first.get("connect_retries", 3) or 3),
+            "connect_retry_delay_sec": float(
+                first.get("connect_retry_delay_sec", 0.5) or 0.5
+            ),
+            "tags": base_tags,
+        }
+    )
+
+
+def _plc_slot_to_api(plc: dict[str, Any] | None, defaults: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(plc, dict):
+        plc = {}
+    tags = plc.get("tags")
+    if not isinstance(tags, dict):
+        tags = {}
+    base = copy.deepcopy(defaults)
+    base.update(
+        {
+            "name": plc.get("name") or base["name"],
+            "ip": plc.get("ip") or "",
+            "port": plc.get("port", base["port"]),
+            "frame_type": str(plc.get("frame_type", base["frame_type"]) or "3E"),
+            "max_connections": int(plc.get("max_connections", base["max_connections"]) or 1),
+            "poll_interval": float(plc.get("poll_interval", base["poll_interval"]) or 5.0),
+            "connect_retries": int(plc.get("connect_retries", base["connect_retries"]) or 3),
+            "connect_retry_delay_sec": float(
+                plc.get("connect_retry_delay_sec", base["connect_retry_delay_sec"]) or 0.5
+            ),
+            "tags": tags,
+        }
+    )
+    return base
+
+
+def _build_setup_snapshot(cfg: dict[str, Any]) -> dict[str, Any]:
+    defaults = _defaults_plc_slot()
+    plcs: list[dict[str, Any]] = []
+    try:
+        plcs = _ensure_melsecs_list(copy.deepcopy(cfg))
+    except ValueError:
+        plcs = []
+
+    plc1 = _plc_slot_to_api(plcs[0] if len(plcs) > 0 else None, {**defaults, "name": "PLC_01"})
+    plc2 = _plc_slot_to_api(plcs[1] if len(plcs) > 1 else None, {**defaults, "name": "PLC_02"})
+
+    influx = cfg.get("influxdb") if isinstance(cfg.get("influxdb"), dict) else {}
+    mongo = cfg.get("mongodb") if isinstance(cfg.get("mongodb"), dict) else {}
+
+    return {
+        "plc1": plc1,
+        "plc2": plc2,
+        "influxdb": {
+            "url": influx.get("url") or "",
+            "token": influx.get("token") or "",
+            "org": influx.get("org") or "",
+            "bucket": influx.get("bucket") or "",
+            "user": influx.get("user") or "",
+            "password": influx.get("password") or "",
+            "measurement": influx.get("measurement") or "",
+        },
+        "mongodb": {
+            "host": mongo.get("host") or "",
+            "port": int(mongo.get("port", 27017) or 27017),
+            "database": mongo.get("database") or "",
+            "collection": mongo.get("collection") or "",
+            "user": mongo.get("user") or "",
+            "password": mongo.get("password") or "",
+        },
+    }
+
+
+def _apply_setup_payload(cfg: dict[str, Any], body: dict[str, Any]) -> None:
+    plcs = _ensure_melsecs_list(cfg)
+
+    def patch_plc(target: dict[str, Any], src: dict[str, Any] | None) -> None:
+        if not isinstance(src, dict):
+            return
+        if src.get("name") not in (None, ""):
+            target["name"] = str(src["name"]).strip()
+        if "ip" in src:
+            target["ip"] = str(src.get("ip") or "").strip()
+        if "port" in src:
+            target["port"] = int(src["port"])
+        if "frame_type" in src:
+            target["frame_type"] = str(src.get("frame_type") or "3E").strip()
+        if "max_connections" in src:
+            target["max_connections"] = max(1, int(src["max_connections"]))
+        if "poll_interval" in src:
+            target["poll_interval"] = float(src["poll_interval"])
+        if "connect_retries" in src:
+            target["connect_retries"] = max(1, int(src["connect_retries"]))
+        if "connect_retry_delay_sec" in src:
+            target["connect_retry_delay_sec"] = float(src["connect_retry_delay_sec"])
+
+    plc1_body = body.get("plc1")
+    plc2_body = body.get("plc2")
+    if isinstance(plc2_body, dict) and any(
+        plc2_body.get(k) not in (None, "")
+        for k in ("ip", "name")
+    ):
+        _ensure_second_plc_stub(cfg)
+        plcs = _ensure_melsecs_list(cfg)
+
+    patch_plc(plcs[0], plc1_body if isinstance(plc1_body, dict) else None)
+    if len(plcs) > 1:
+        patch_plc(plcs[1], plc2_body if isinstance(plc2_body, dict) else None)
+
+    influx_body = body.get("influxdb")
+    if isinstance(influx_body, dict):
+        influx = cfg.setdefault("influxdb", {})
+        for key in (
+            "url",
+            "token",
+            "org",
+            "bucket",
+            "user",
+            "password",
+            "measurement",
+        ):
+            if key in influx_body:
+                influx[key] = influx_body[key]
+
+    mongo_body = body.get("mongodb")
+    if isinstance(mongo_body, dict):
+        mongo = cfg.setdefault("mongodb", {})
+        for key in ("host", "database", "collection", "user", "password"):
+            if key in mongo_body:
+                mongo[key] = mongo_body[key]
+        if "port" in mongo_body:
+            mongo["port"] = int(mongo_body["port"])
 
 
 class WSManager:
@@ -268,6 +486,127 @@ class WebAPI:
         @app.post("/restart")
         async def restart_legacy(background_tasks: BackgroundTasks):
             return await api_restart(background_tasks)
+
+        @app.get("/api/config/setup")
+        async def api_config_setup_get() -> dict[str, Any]:
+            path = Path(ctrl.config_path)
+            if path.is_file():
+                try:
+                    text = path.read_text(encoding="utf-8")
+                    cfg = yaml.safe_load(text)
+                except OSError as e:
+                    raise HTTPException(status_code=500, detail=f"無法讀取設定: {e}") from e
+                except yaml.YAMLError as e:
+                    raise HTTPException(status_code=500, detail=f"YAML 錯誤: {e}") from e
+            else:
+                cfg = copy.deepcopy(ctrl.cfg) if isinstance(ctrl.cfg, dict) else {}
+            if not isinstance(cfg, dict):
+                cfg = {}
+            return _build_setup_snapshot(cfg)
+
+        @app.put("/api/config/setup")
+        async def api_config_setup_put(body: dict[str, Any] = Body(...)) -> dict[str, str]:
+            path = Path(ctrl.config_path)
+            if not path.parent.is_dir():
+                path.parent.mkdir(parents=True, exist_ok=True)
+            if path.is_file():
+                try:
+                    raw = path.read_bytes()
+                    cfg = yaml.safe_load(raw.decode("utf-8"))
+                except UnicodeDecodeError as e:
+                    raise HTTPException(status_code=500, detail=f"設定須為 UTF-8: {e}") from e
+                except yaml.YAMLError as e:
+                    raise HTTPException(status_code=500, detail=f"YAML 錯誤: {e}") from e
+            else:
+                cfg = copy.deepcopy(ctrl.cfg) if isinstance(ctrl.cfg, dict) else {}
+            if not isinstance(cfg, dict):
+                raise HTTPException(status_code=500, detail="設定根節點無效")
+
+            try:
+                _apply_setup_payload(cfg, body)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+
+            try:
+                validate_platinum_config(cfg)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+
+            try:
+                dump = yaml.safe_dump(
+                    cfg,
+                    allow_unicode=True,
+                    sort_keys=False,
+                    default_flow_style=False,
+                )
+                path.write_text(dump, encoding="utf-8")
+            except OSError as e:
+                raise HTTPException(status_code=500, detail=f"無法寫入: {e}") from e
+
+            logger.info("設定已由網頁「Setup」寫入 %s", path)
+            return {"status": "success", "message": "設定已寫入，請按「重新啟動程式」套用"}
+
+        @app.post("/api/config/plc/{plc_index}/tags/import")
+        async def api_plc_tags_import(
+            plc_index: int,
+            file: UploadFile = File(...),
+        ) -> dict[str, str]:
+            if plc_index not in (0, 1):
+                raise HTTPException(status_code=400, detail="plc_index 須為 0（PLC 1）或 1（PLC 2）")
+            name_lower = (file.filename or "").lower()
+            if not name_lower.endswith(".csv"):
+                raise HTTPException(status_code=400, detail="請上傳 .csv")
+
+            raw = await file.read()
+            try:
+                text = raw.decode("utf-8-sig")
+            except UnicodeDecodeError as e:
+                raise HTTPException(status_code=400, detail=f"檔案須為 UTF-8: {e}") from e
+
+            try:
+                reader = csv.DictReader(io.StringIO(text))
+                if reader.fieldnames is None:
+                    raise ValueError("CSV 無表頭")
+                rows = list(reader)
+                tags = _tags_dict_from_csv_rows(rows)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+
+            path = Path(ctrl.config_path)
+            if path.is_file():
+                try:
+                    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+                except yaml.YAMLError as e:
+                    raise HTTPException(status_code=500, detail=f"YAML 錯誤: {e}") from e
+            else:
+                cfg = copy.deepcopy(ctrl.cfg) if isinstance(ctrl.cfg, dict) else {}
+            if not isinstance(cfg, dict):
+                raise HTTPException(status_code=500, detail="設定根節點無效")
+
+            try:
+                if plc_index == 1:
+                    _ensure_second_plc_stub(cfg)
+                plcs = _ensure_melsecs_list(cfg)
+                if plc_index >= len(plcs):
+                    raise ValueError("PLC 索引超出目前設定中的台數")
+                plcs[plc_index]["tags"] = tags
+                validate_platinum_config(cfg)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+
+            try:
+                dump = yaml.safe_dump(
+                    cfg,
+                    allow_unicode=True,
+                    sort_keys=False,
+                    default_flow_style=False,
+                )
+                path.write_text(dump, encoding="utf-8")
+            except OSError as e:
+                raise HTTPException(status_code=500, detail=f"無法寫入: {e}") from e
+
+            logger.info("PLC %s 標籤已由 CSV 匯入 %s", plc_index + 1, path)
+            return {"status": "success", "message": "標籤已寫入設定檔，請重新啟動程式套用"}
 
         @app.get("/api/logs/zip")
         async def api_logs_zip():

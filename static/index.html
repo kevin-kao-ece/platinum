@@ -8,8 +8,9 @@
 </head>
 <body>
   <main class="wrap">
-    <header class="page-head">
+    <header class="page-head page-head-row">
       <h1>NeoEdge Melsec Bridge V1.2.20</h1>
+      <button type="button" class="btn secondary" id="btnOpenSetup">Setup</button>
     </header>
 
     <div class="dashboard-grid">
@@ -63,22 +64,6 @@
       <h2 id="h-op">操作</h2>
 
       <div class="op-item">
-        <span class="field-label">設定檔</span>
-        <a class="btn primary full-width" href="/api/config/export">匯出 config.yaml</a>
-      </div>
-
-      <div class="op-item">
-        <span class="field-label">匯入 config.yaml</span>
-        <label class="btn-merge cfg-merge">
-          <span class="btn-merge-label">選擇 YAML</span>
-          <input type="file" id="cfgFile" accept=".yaml,.yml,application/x-yaml,text/yaml" hidden />
-          <span id="cfgFileName" class="file-name muted">未選擇檔案</span>
-        </label>
-        <button type="button" class="btn primary full-width" id="btnImportCfg">確認上傳並軟重載</button>
-        <p id="cfgMsg" class="msg"></p>
-      </div>
-
-      <div class="op-item">
         <span class="field-label">日誌</span>
         <div class="btn-grid">
           <a class="btn" href="/api/logs/zip">下載 Logs（ZIP）</a>
@@ -92,14 +77,107 @@
           <pre id="logViewer" class="log-viewer"></pre>
         </div>
       </div>
-
-      <div class="op-item">
-        <span class="field-label">服務</span>
-        <button type="button" class="btn warn full-width" id="btnRestart">重新啟動程式（軟重載）</button>
-      </div>
     </section>
     </div>
+
+    <!-- Setup modal -->
+    <div id="setupModal" class="modal-backdrop hidden" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="setupModalTitle">
+        <div class="modal-head">
+          <h2 id="setupModalTitle">Setup</h2>
+          <button type="button" class="btn btn-small ghost modal-close" id="btnCloseSetup" aria-label="關閉">✕</button>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-tab="plc1">PLC 1</button>
+          <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="plc2">PLC 2</button>
+          <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="influx">InfluxDB</button>
+          <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="mongo">MongoDB</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="tab-panel active" id="panel-plc1" role="tabpanel" data-panel="plc1">
+            <div class="form-grid">
+              <label class="field"><span class="field-label">IP</span><input type="text" id="plc1_ip" autocomplete="off" /></label>
+              <label class="field"><span class="field-label">Port</span><input type="number" id="plc1_port" min="1" max="65535" /></label>
+              <label class="field"><span class="field-label">Frame type</span><input type="text" id="plc1_frame_type" placeholder="3E / 4E" /></label>
+              <label class="field"><span class="field-label">Max connections</span><input type="number" id="plc1_max_connections" min="1" /></label>
+              <label class="field"><span class="field-label">Poll interval（秒）</span><input type="number" id="plc1_poll_interval" step="any" min="0" /></label>
+              <label class="field"><span class="field-label">Connect retries</span><input type="number" id="plc1_connect_retries" min="1" /></label>
+              <label class="field"><span class="field-label">Connect retry delay（秒）</span><input type="number" id="plc1_connect_retry_delay_sec" step="any" min="0" /></label>
+            </div>
+            <div class="tags-toolbar">
+              <span class="field-label">Tags（CSV）</span>
+              <div class="btn-grid tight">
+                <button type="button" class="btn" id="btnExportTagsPlc1">匯出 Tags 為 CSV</button>
+                <label class="btn-merge cfg-merge tight">
+                  <span class="btn-merge-label">選擇 CSV</span>
+                  <input type="file" id="plc1TagsFile" accept=".csv,text/csv" hidden />
+                  <span id="plc1TagsFileName" class="file-name muted">未選擇檔案</span>
+                </label>
+              </div>
+              <button type="button" class="btn primary full-width tight-top" id="btnImportTagsPlc1">匯入 Tags（寫入設定檔）</button>
+            </div>
+          </div>
+
+          <div class="tab-panel" id="panel-plc2" role="tabpanel" data-panel="plc2">
+            <div class="form-grid">
+              <label class="field"><span class="field-label">IP</span><input type="text" id="plc2_ip" autocomplete="off" /></label>
+              <label class="field"><span class="field-label">Port</span><input type="number" id="plc2_port" min="1" max="65535" /></label>
+              <label class="field"><span class="field-label">Frame type</span><input type="text" id="plc2_frame_type" placeholder="3E / 4E" /></label>
+              <label class="field"><span class="field-label">Max connections</span><input type="number" id="plc2_max_connections" min="1" /></label>
+              <label class="field"><span class="field-label">Poll interval（秒）</span><input type="number" id="plc2_poll_interval" step="any" min="0" /></label>
+              <label class="field"><span class="field-label">Connect retries</span><input type="number" id="plc2_connect_retries" min="1" /></label>
+              <label class="field"><span class="field-label">Connect retry delay（秒）</span><input type="number" id="plc2_connect_retry_delay_sec" step="any" min="0" /></label>
+            </div>
+            <div class="tags-toolbar">
+              <span class="field-label">Tags（CSV）</span>
+              <div class="btn-grid tight">
+                <button type="button" class="btn" id="btnExportTagsPlc2">匯出 Tags 為 CSV</button>
+                <label class="btn-merge cfg-merge tight">
+                  <span class="btn-merge-label">選擇 CSV</span>
+                  <input type="file" id="plc2TagsFile" accept=".csv,text/csv" hidden />
+                  <span id="plc2TagsFileName" class="file-name muted">未選擇檔案</span>
+                </label>
+              </div>
+              <button type="button" class="btn primary full-width tight-top" id="btnImportTagsPlc2">匯入 Tags（寫入設定檔）</button>
+            </div>
+          </div>
+
+          <div class="tab-panel" id="panel-influx" role="tabpanel" data-panel="influx">
+            <div class="form-grid">
+              <label class="field full"><span class="field-label">URL</span><input type="text" id="influx_url" autocomplete="off" /></label>
+              <label class="field full"><span class="field-label">Token</span><input type="password" id="influx_token" autocomplete="off" /></label>
+              <label class="field"><span class="field-label">Org</span><input type="text" id="influx_org" autocomplete="off" /></label>
+              <label class="field"><span class="field-label">Bucket</span><input type="text" id="influx_bucket" autocomplete="off" /></label>
+              <label class="field"><span class="field-label">User</span><input type="text" id="influx_user" autocomplete="off" /></label>
+              <label class="field"><span class="field-label">Password</span><input type="password" id="influx_password" autocomplete="off" /></label>
+              <label class="field full"><span class="field-label">Measurement</span><input type="text" id="influx_measurement" autocomplete="off" /></label>
+            </div>
+          </div>
+
+          <div class="tab-panel" id="panel-mongo" role="tabpanel" data-panel="mongo">
+            <div class="form-grid">
+              <label class="field"><span class="field-label">Host</span><input type="text" id="mongo_host" autocomplete="off" /></label>
+              <label class="field"><span class="field-label">Port</span><input type="number" id="mongo_port" min="1" max="65535" /></label>
+              <label class="field"><span class="field-label">Database</span><input type="text" id="mongo_database" autocomplete="off" /></label>
+              <label class="field"><span class="field-label">Collection</span><input type="text" id="mongo_collection" autocomplete="off" /></label>
+              <label class="field"><span class="field-label">User</span><input type="text" id="mongo_user" autocomplete="off" /></label>
+              <label class="field"><span class="field-label">Password</span><input type="password" id="mongo_password" autocomplete="off" /></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <p id="setupMsg" class="msg modal-msg"></p>
+          <div class="modal-actions">
+            <button type="button" class="btn primary" id="btnSaveSetup">儲存設定</button>
+            <button type="button" class="btn warn" id="btnRestart">重新啟動程式</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
-  <script src="/static/app.js?v=2"></script>
+  <script src="/static/app.js?v=4"></script>
 </body>
 </html>
