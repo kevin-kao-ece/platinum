@@ -421,6 +421,8 @@ class WebAPI:
                 "license_contact": app_cfg.get(
                     "license_contact", "貴司授權／業務窗口"
                 ),
+                "app_name": app_cfg.get("app_name") or "",
+                "version": app_cfg.get("version") if app_cfg.get("version") is not None else "",
             }
 
         @app.get("/api/config/export")

@@ -11,6 +11,10 @@
   var setupSnapshot = null;
   /** @type {number | null} */
   var restartWatchTimer = null;
+  /** @type {string | null} 最近一次成功載入／儲存後的表單快照（JSON） */
+  var setupFormBaseline = null;
+  /** 本次開啟 Setup 後曾成功「儲存設定」或「匯入 Tags」才可重新啟動 */
+  var setupRestartAllowed = false;
 
   function $(id) {
     return document.getElementById(id);
@@ -87,6 +91,24 @@
     el.title = "remain_time: " + rt + " 秒";
   }
 
+  function applyAppHead(data) {
+    var name = data.app_name != null ? String(data.app_name).trim() : "";
+    var verRaw = data.version;
+    var ver =
+      verRaw != null && String(verRaw).trim() !== ""
+        ? String(verRaw).trim()
+        : "";
+    var h = $("appHeadTitle");
+    if (name && h) {
+      h.textContent = ver ? name + " V" + ver : name;
+    } else if (h && !name) {
+      h.textContent = "—";
+    }
+    if (name) {
+      document.title = name + " 管理";
+    }
+  }
+
   function applyLicenseUI(data) {
     var noPanel = $("licenseStepsPanel");
     var okPanel = $("licenseOkPanel");
@@ -109,6 +131,7 @@
       });
       setBadge($("statusBadge"), data.running_status);
       setRemainTime(rte, data);
+      applyAppHead(data);
       applyLicenseUI(data);
       if (!res.ok && rte) {
         rte.textContent = "無法取得狀態（HTTP " + res.status + "）";
@@ -272,6 +295,24 @@
     };
   }
 
+  function isSetupDirty() {
+    if (setupFormBaseline === null) return false;
+    try {
+      return JSON.stringify(collectSetupPayload()) !== setupFormBaseline;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function updateSetupActionButtons() {
+    var saveBtn = $("btnSaveSetup");
+    var restartBtn = $("btnRestart");
+    if (!saveBtn || !restartBtn) return;
+    var dirty = isSetupDirty();
+    saveBtn.disabled = !dirty;
+    restartBtn.disabled = !(setupRestartAllowed && !dirty);
+  }
+
   function escapeCsvCell(s) {
     var t = String(s == null ? "" : s);
     if (/[",\r\n]/.test(t)) return '"' + t.replace(/"/g, '""') + '"';
@@ -328,6 +369,10 @@
 
   async function loadSetupIntoForms() {
     show("setupMsg", "載入中…", false);
+    var saveBtn = $("btnSaveSetup");
+    var restartBtn = $("btnRestart");
+    if (saveBtn) saveBtn.disabled = true;
+    if (restartBtn) restartBtn.disabled = true;
     try {
       var res = await fetch("/api/config/setup", { cache: "no-store" });
       var data = await res.json().catch(function () {
@@ -339,6 +384,7 @@
           (data && data.detail) || "無法載入設定（HTTP " + res.status + "）",
           true
         );
+        updateSetupActionButtons();
         return;
       }
       setupSnapshot = data;
@@ -346,14 +392,19 @@
       fillPlcForm("plc2", data.plc2);
       fillInfluxMongo(data);
       show("setupMsg", "", false);
+      setupFormBaseline = JSON.stringify(collectSetupPayload());
+      updateSetupActionButtons();
     } catch (e) {
       show("setupMsg", String(e), true);
+      updateSetupActionButtons();
     }
   }
 
   function openSetupModal() {
     var modal = $("setupModal");
     if (!modal) return;
+    setupRestartAllowed = false;
+    setupFormBaseline = null;
     activateSetupTab("plc1");
     modal.classList.remove("hidden");
     modal.setAttribute("aria-hidden", "false");
@@ -388,6 +439,16 @@
     if (e.target === $("setupModal")) closeSetupModal();
   });
 
+  var setupModalBody = document.querySelector("#setupModal .modal-body");
+  if (setupModalBody) {
+    setupModalBody.addEventListener("input", function () {
+      updateSetupActionButtons();
+    });
+    setupModalBody.addEventListener("change", function () {
+      updateSetupActionButtons();
+    });
+  }
+
   document.querySelectorAll(".tab-btn").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var tab = btn.getAttribute("data-tab");
@@ -415,12 +476,15 @@
             : JSON.stringify(detail || data),
           true
         );
+        updateSetupActionButtons();
         return;
       }
       show("setupMsg", data.message || "已儲存", false);
+      setupRestartAllowed = true;
       await loadSetupIntoForms();
     } catch (e) {
       show("setupMsg", String(e), true);
+      updateSetupActionButtons();
     }
   });
 
@@ -497,14 +561,17 @@
               : JSON.stringify(data.detail || data),
             true
           );
+          updateSetupActionButtons();
           return;
         }
         show("setupMsg", data.message || "匯入完成", false);
         input.value = "";
         $(fileNameId).textContent = "未選擇檔案";
+        setupRestartAllowed = true;
         await loadSetupIntoForms();
       } catch (e) {
         show("setupMsg", String(e), true);
+        updateSetupActionButtons();
       }
     });
   }

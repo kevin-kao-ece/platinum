@@ -1,5 +1,6 @@
 app:
-  app_name: neoedgex_melsec_bridge
+  app_name: NeoEdge Melsec Bridge
+  version: 1.2.10
   log_level: DEBUG
   log_file_count: 30
 influxdb:
@@ -23,7 +24,7 @@ melsecs:
   ip: 20.6.35.107
   port: 16002
   frame_type: 3E
-  max_connections: 1
+  max_connections: 2
   poll_interval: 5.0
   connect_retries: 3
   connect_retry_delay_sec: 0.5

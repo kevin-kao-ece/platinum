@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NeoEdge Melsec Bridge 管理</title>
+  <title>載入中…</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
   <main class="wrap">
     <header class="page-head page-head-row">
-      <h1>NeoEdge Melsec Bridge V1.2.20</h1>
+      <h1 id="appHeadTitle">載入中…</h1>
       <button type="button" class="btn secondary" id="btnOpenSetup">Setup</button>
     </header>
 
@@ -107,16 +107,24 @@
               <label class="field"><span class="field-label">Connect retry delay（秒）</span><input type="number" id="plc1_connect_retry_delay_sec" step="any" min="0" /></label>
             </div>
             <div class="tags-toolbar">
-              <span class="field-label">Tags（CSV）</span>
-              <div class="btn-grid tight">
-                <button type="button" class="btn" id="btnExportTagsPlc1">匯出 Tags 為 CSV</button>
-                <label class="btn-merge cfg-merge tight">
-                  <span class="btn-merge-label">選擇 CSV</span>
-                  <input type="file" id="plc1TagsFile" accept=".csv,text/csv" hidden />
-                  <span id="plc1TagsFileName" class="file-name muted">未選擇檔案</span>
-                </label>
+              <span class="field-label tags-section-title">Tags（CSV）</span>
+              <div class="tags-csv-groups">
+                <div class="tags-group tags-group-export" aria-label="匯出 Tags">
+                  <span class="tags-group-heading">匯出</span>
+                  <p class="tags-group-hint muted small">將目前 Tags 下載為 CSV 檔</p>
+                  <button type="button" class="btn full-width" id="btnExportTagsPlc1">匯出 Tags 為 CSV</button>
+                </div>
+                <div class="tags-group tags-group-import" aria-label="匯入 Tags">
+                  <span class="tags-group-heading">匯入</span>
+                  <p class="tags-group-hint muted small">選擇 CSV 後按下方按鈕寫入設定檔</p>
+                  <label class="btn-merge cfg-merge tags-import-file">
+                    <span class="btn-merge-label">選擇 CSV 檔案</span>
+                    <input type="file" id="plc1TagsFile" accept=".csv,text/csv" hidden />
+                    <span id="plc1TagsFileName" class="file-name muted">未選擇檔案</span>
+                  </label>
+                  <button type="button" class="btn primary full-width" id="btnImportTagsPlc1">匯入 Tags（寫入設定檔）</button>
+                </div>
               </div>
-              <button type="button" class="btn primary full-width tight-top" id="btnImportTagsPlc1">匯入 Tags（寫入設定檔）</button>
             </div>
           </div>
 
@@ -131,16 +139,24 @@
               <label class="field"><span class="field-label">Connect retry delay（秒）</span><input type="number" id="plc2_connect_retry_delay_sec" step="any" min="0" /></label>
             </div>
             <div class="tags-toolbar">
-              <span class="field-label">Tags（CSV）</span>
-              <div class="btn-grid tight">
-                <button type="button" class="btn" id="btnExportTagsPlc2">匯出 Tags 為 CSV</button>
-                <label class="btn-merge cfg-merge tight">
-                  <span class="btn-merge-label">選擇 CSV</span>
-                  <input type="file" id="plc2TagsFile" accept=".csv,text/csv" hidden />
-                  <span id="plc2TagsFileName" class="file-name muted">未選擇檔案</span>
-                </label>
+              <span class="field-label tags-section-title">Tags（CSV）</span>
+              <div class="tags-csv-groups">
+                <div class="tags-group tags-group-export" aria-label="匯出 Tags">
+                  <span class="tags-group-heading">匯出</span>
+                  <p class="tags-group-hint muted small">將目前 Tags 下載為 CSV 檔</p>
+                  <button type="button" class="btn full-width" id="btnExportTagsPlc2">匯出 Tags 為 CSV</button>
+                </div>
+                <div class="tags-group tags-group-import" aria-label="匯入 Tags">
+                  <span class="tags-group-heading">匯入</span>
+                  <p class="tags-group-hint muted small">選擇 CSV 後按下方按鈕寫入設定檔</p>
+                  <label class="btn-merge cfg-merge tags-import-file">
+                    <span class="btn-merge-label">選擇 CSV 檔案</span>
+                    <input type="file" id="plc2TagsFile" accept=".csv,text/csv" hidden />
+                    <span id="plc2TagsFileName" class="file-name muted">未選擇檔案</span>
+                  </label>
+                  <button type="button" class="btn primary full-width" id="btnImportTagsPlc2">匯入 Tags（寫入設定檔）</button>
+                </div>
               </div>
-              <button type="button" class="btn primary full-width tight-top" id="btnImportTagsPlc2">匯入 Tags（寫入設定檔）</button>
             </div>
           </div>
 
@@ -171,13 +187,13 @@
         <div class="modal-footer">
           <p id="setupMsg" class="msg modal-msg"></p>
           <div class="modal-actions">
-            <button type="button" class="btn primary" id="btnSaveSetup">儲存設定</button>
-            <button type="button" class="btn warn" id="btnRestart">重新啟動程式</button>
+            <button type="button" class="btn primary" id="btnSaveSetup" disabled>儲存設定</button>
+            <button type="button" class="btn warn" id="btnRestart" disabled>重新啟動程式</button>
           </div>
         </div>
       </div>
     </div>
   </main>
-  <script src="/static/app.js?v=4"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>
