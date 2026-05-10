@@ -4,6 +4,7 @@ import asyncio
 import copy
 import csv
 import io
+import re
 import sys
 import threading
 import time
@@ -111,6 +112,89 @@ def _normalize_tag_header(key: str) -> str:
     return aliases.get(k, k)
 
 
+# 與 melsec.MelsecSession（read/write）支援之 datatype 一致
+_TAG_DATATYPES_SUPPORTED = frozenset(
+    {"bool", "string", "uint16", "int16", "uint32", "int32", "float", "double"}
+)
+
+
+def _normalize_and_validate_melsec_device(device_raw: str, tag_name: str) -> str:
+    """以 pymcprotocol（Q 系列，與 Type3E() 預設相同）驗證裝置字串並回傳可用寫法。"""
+    try:
+        from pymcprotocol.type3e import Type3E
+    except ImportError as e:
+        raise ValueError("伺服器缺少 pymcprotocol，無法驗證 device") from e
+
+    d = device_raw.strip()
+    if not d:
+        raise ValueError(f"標籤「{tag_name}」device 不可為空")
+
+    plc = Type3E("Q")
+    last_err: BaseException | None = None
+    for cand in (d, d.upper()):
+        try:
+            plc._make_devicedata(cand)
+            return cand
+        except BaseException as e:
+            last_err = e
+    raise ValueError(
+        f"標籤「{tag_name}」device「{d}」不符合 MC Protocol（三菱 MC／本程式預設 Q 系列）"
+    ) from last_err
+
+
+def _validate_device_matches_datatype(tag_name: str, device: str, dtype: str) -> None:
+    """位元裝置僅允許 bool；字／雙字裝置允許 string 與數值型（見 melsec 使用 batchread_bitunits vs wordunits）。"""
+    try:
+        from pymcprotocol.mcprotocolconst import DeviceConstants
+    except ImportError as e:
+        raise ValueError("伺服器缺少 pymcprotocol，無法驗證 device") from e
+
+    m = re.search(r"\D+", device)
+    if not m:
+        raise ValueError(f"標籤「{tag_name}」device「{device}」無法辨識裝置字首")
+    devicetype = m.group(0).upper()
+
+    try:
+        kind = DeviceConstants.get_devicetype("Q", devicetype)
+    except Exception as e:
+        raise ValueError(
+            f"標籤「{tag_name}」device 字首「{devicetype}」非支援之裝置區：{e}"
+        ) from e
+
+    bit_k = DeviceConstants.BIT_DEVICE
+    word_k = DeviceConstants.WORD_DEVICE
+    dword_k = DeviceConstants.DWORD_DEVICE
+
+    if dtype == "bool":
+        if kind != bit_k:
+            raise ValueError(
+                f"標籤「{tag_name}」datatype 為 bool 時，device 須為位元區（如 X/Y/M/L/B…），目前為「{device}」"
+            )
+    else:
+        if kind not in (word_k, dword_k):
+            raise ValueError(
+                f"標籤「{tag_name}」datatype 為「{dtype}」時，device 須為字組／雙字組區（如 D/W/R/ZR/SW…），目前為「{device}」"
+            )
+
+
+def _validate_csv_tag_row(tag_name: str, access_raw: str, device_raw: str, datatype_raw: str) -> dict[str, Any]:
+    access = access_raw.strip().lower()
+    if access not in ("read", "write"):
+        raise ValueError(f"標籤「{tag_name}」access 須為 read 或 write（不可為「{access_raw.strip()}」）")
+
+    dtype = datatype_raw.strip().lower()
+    if dtype not in _TAG_DATATYPES_SUPPORTED:
+        allowed = ", ".join(sorted(_TAG_DATATYPES_SUPPORTED))
+        raise ValueError(
+            f"標籤「{tag_name}」datatype「{datatype_raw.strip()}」不支援；請使用：{allowed}"
+        )
+
+    device_norm = _normalize_and_validate_melsec_device(device_raw, tag_name)
+    _validate_device_matches_datatype(tag_name, device_norm, dtype)
+
+    return {"access": access, "device": device_norm, "datatype": dtype}
+
+
 def _tags_dict_from_csv_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
     tags: dict[str, Any] = {}
     for row in rows:
@@ -118,16 +202,14 @@ def _tags_dict_from_csv_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
         name = norm.get("tag_name", "").strip()
         if not name:
             continue
-        access = norm.get("access", "").strip().lower()
         device = norm.get("device", "").strip()
-        datatype = norm.get("datatype", "").strip().lower()
-        if access not in ("read", "write"):
-            raise ValueError(f"標籤「{name}」access 須為 read 或 write")
+        datatype = norm.get("datatype", "").strip()
         if not device:
             raise ValueError(f"標籤「{name}」缺少 device")
         if not datatype:
             raise ValueError(f"標籤「{name}」缺少 datatype")
-        tags[name] = {"access": access, "device": device, "datatype": datatype}
+        access = norm.get("access", "").strip()
+        tags[name] = _validate_csv_tag_row(name, access, device, datatype)
     if not tags:
         raise ValueError("CSV 無有效標籤列（需含 tag_name, access, device, datatype）")
     return tags
