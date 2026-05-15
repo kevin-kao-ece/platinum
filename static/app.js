@@ -320,16 +320,23 @@
   }
 
   function tagsToCsv(tags) {
-    var lines = ["tag_name,access,device,datatype"];
+    var lines = ["tag_name,access,device,datatype,length"];
     if (!tags || typeof tags !== "object") return lines.join("\r\n");
     Object.keys(tags).forEach(function (name) {
       var t = tags[name] || {};
+      var lenCell =
+        String(t.datatype || "").toLowerCase() === "string" &&
+        t.length != null &&
+        t.length !== ""
+          ? String(t.length)
+          : "";
       lines.push(
         [
           escapeCsvCell(name),
           escapeCsvCell(t.access),
           escapeCsvCell(t.device),
           escapeCsvCell(t.datatype),
+          escapeCsvCell(lenCell),
         ].join(",")
       );
     });

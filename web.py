@@ -117,6 +117,9 @@ _TAG_DATATYPES_SUPPORTED = frozenset(
     {"bool", "string", "uint16", "int16", "uint32", "int32", "float", "double"}
 )
 
+# string 讀取 batchread_wordunits 的 readsize（word 數）；避免過大請求
+_TAG_STRING_LENGTH_MAX = 512
+
 
 def _normalize_and_validate_melsec_device(device_raw: str, tag_name: str) -> str:
     """以 pymcprotocol（Q 系列，與 Type3E() 預設相同）驗證裝置字串並回傳可用寫法。"""
@@ -177,7 +180,13 @@ def _validate_device_matches_datatype(tag_name: str, device: str, dtype: str) ->
             )
 
 
-def _validate_csv_tag_row(tag_name: str, access_raw: str, device_raw: str, datatype_raw: str) -> dict[str, Any]:
+def _validate_csv_tag_row(
+    tag_name: str,
+    access_raw: str,
+    device_raw: str,
+    datatype_raw: str,
+    length_raw: str = "",
+) -> dict[str, Any]:
     access = access_raw.strip().lower()
     if access not in ("read", "write"):
         raise ValueError(f"標籤「{tag_name}」access 須為 read 或 write（不可為「{access_raw.strip()}」）")
@@ -192,7 +201,27 @@ def _validate_csv_tag_row(tag_name: str, access_raw: str, device_raw: str, datat
     device_norm = _normalize_and_validate_melsec_device(device_raw, tag_name)
     _validate_device_matches_datatype(tag_name, device_norm, dtype)
 
-    return {"access": access, "device": device_norm, "datatype": dtype}
+    out: dict[str, Any] = {"access": access, "device": device_norm, "datatype": dtype}
+
+    length_s = (length_raw or "").strip()
+    if length_s:
+        if dtype != "string":
+            raise ValueError(
+                f"標籤「{tag_name}」僅 datatype 為 string 時可填 length（目前為「{dtype}」）"
+            )
+        try:
+            n = int(length_s, 10)
+        except ValueError as e:
+            raise ValueError(
+                f"標籤「{tag_name}」length 須為正整數（目前為「{length_s}」）"
+            ) from e
+        if n < 1 or n > _TAG_STRING_LENGTH_MAX:
+            raise ValueError(
+                f"標籤「{tag_name}」length 須介於 1～{_TAG_STRING_LENGTH_MAX}（目前為 {n}）"
+            )
+        out["length"] = n
+
+    return out
 
 
 def _tags_dict_from_csv_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
@@ -209,9 +238,12 @@ def _tags_dict_from_csv_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
         if not datatype:
             raise ValueError(f"標籤「{name}」缺少 datatype")
         access = norm.get("access", "").strip()
-        tags[name] = _validate_csv_tag_row(name, access, device, datatype)
+        length_cell = norm.get("length", "")
+        tags[name] = _validate_csv_tag_row(name, access, device, datatype, length_cell)
     if not tags:
-        raise ValueError("CSV 無有效標籤列（需含 tag_name, access, device, datatype）")
+        raise ValueError(
+            "CSV 無有效標籤列（需含 tag_name, access, device, datatype；string 可選填 length）"
+        )
     return tags
 
 

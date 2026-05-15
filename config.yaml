@@ -29,22 +29,903 @@ melsecs:
   connect_retries: 3
   connect_retry_delay_sec: 0.5
   tags:
-    motorStartStop:
-      access: write
-      device: Y0
-      datatype: bool
-    targetSpeed:
-      access: write
-      device: D14
+    EQAlive:
+      access: read
+      device: W0000
       datatype: uint16
-    motorCurrent:
+    EquipmentCIM:
       access: read
-      device: D12
-      datatype: float
-    motorSpeed:
+      device: W0002
+      datatype: int16
+    EquipmentStatus:
       access: read
-      device: D10
-      datatype: float
+      device: W0040
+      datatype: int16
+    AlarmCode:
+      access: read
+      device: W0041
+      datatype: int16
+    EH01_WorkNo:
+      access: read
+      device: W000A
+      datatype: string
+      length: 5
+    EH01_EqumentID:
+      access: read
+      device: W0004
+      datatype: string
+      length: 3
+    EH01_NodeID:
+      access: read
+      device: W0010
+      datatype: string
+      length: 5
+    EH01_WorkID:
+      access: read
+      device: W001A
+      datatype: string
+      length: 7
+    EH01_MaterialLotIDTape:
+      access: read
+      device: W0032
+      datatype: string
+      length: 12
+    EH01_MaterialLotIDCoverTape:
+      access: read
+      device: W0150
+      datatype: string
+      length: 12
+    EH01_MaterialIDTape:
+      access: read
+      device: W0200
+      datatype: string
+      length: 15
+    EH01_MaterialIDCoverTape:
+      access: read
+      device: W0210
+      datatype: string
+      length: 15
+    EH02_OldCarrierID:
+      access: read
+      device: W0050
+      datatype: string
+      length: 10
+    EH02_NewCarrierID:
+      access: read
+      device: W005A
+      datatype: string
+      length: 10
+    EH02_MaterialLotIDTape:
+      access: read
+      device: W0064
+      datatype: string
+      length: 12
+    EH02_MaterialLotIDCoverTape:
+      access: read
+      device: W0170
+      datatype: string
+      length: 12
+    EH02_MaterialIDTape:
+      access: read
+      device: W0220
+      datatype: string
+      length: 15
+    EH02_MaterialIDCoverTape:
+      access: read
+      device: W0230
+      datatype: string
+      length: 15
+    EH03_CarrierID:
+      access: read
+      device: W0080
+      datatype: string
+      length: 10
+    EH04_OldCarrierID:
+      access: read
+      device: W00A0
+      datatype: string
+      length: 10
+    EH04_NewCarrierID:
+      access: read
+      device: W00AA
+      datatype: string
+      length: 10
+    EH04_Result:
+      access: read
+      device: W00B4
+      datatype: int16
+    EH04_MaterialLotIDTape:
+      access: read
+      device: W00B5
+      datatype: string
+      length: 12
+    EH04_MaterialLotIDCoverTape:
+      access: read
+      device: W0190
+      datatype: string
+      length: 12
+    EH04_MaterialIDTape:
+      access: read
+      device: W0240
+      datatype: string
+      length: 15
+    EH04_MaterialIDCoverTape:
+      access: read
+      device: W0250
+      datatype: string
+      length: 15
+    EH04_IsHold:
+      access: read
+      device: W00C9
+      datatype: int16
+    EH04_Reserve:
+      access: read
+      device: W00C1
+      datatype: string
+      length: 7
+    EH05_CarrierID:
+      access: read
+      device: W00D0
+      datatype: string
+      length: 10
+    EH06_MaterialLotIDTape:
+      access: read
+      device: W00E0
+      datatype: string
+      length: 12
+    EH06_MaterialLotIDCoverTape:
+      access: read
+      device: W01B0
+      datatype: string
+      length: 12
+    EH06_MaterialIDTape:
+      access: read
+      device: W0260
+      datatype: string
+      length: 15
+    EH06_MaterialIDCoverTape:
+      access: read
+      device: W0270
+      datatype: string
+      length: 15
+    EH08_MaterialLotIDTape:
+      access: read
+      device: W0500
+      datatype: string
+      length: 12
+    EH08_MaterialLotIDCoverTape:
+      access: read
+      device: W0510
+      datatype: string
+      length: 12
+    EH08_MaterialIDTape:
+      access: read
+      device: W0520
+      datatype: string
+      length: 15
+    EH08_MaterialIDCoverTape:
+      access: read
+      device: W0530
+      datatype: string
+      length: 15
+    New Carrier ID:
+      access: read
+      device: W120
+      datatype: string
+      length: 10
+    CF roller left pressure:
+      access: read
+      device: W2B0
+      datatype: int32
+    CF roller right pressure:
+      access: read
+      device: W2B2
+      datatype: int32
+    FILM roller left pressure:
+      access: read
+      device: W2B4
+      datatype: int32
+    FILM roller right pressure:
+      access: read
+      device: W2B6
+      datatype: int32
+    Old Carrier ID:
+      access: read
+      device: W110
+      datatype: string
+      length: 10
+    LD N2 flow:
+      access: read
+      device: W2B8
+      datatype: int16
+    CF N2 flow:
+      access: read
+      device: W2BA
+      datatype: int16
+    CDA pressure 1:
+      access: read
+      device: D32002
+      datatype: int16
+    CDA pressure 2:
+      access: read
+      device: D32006
+      datatype: int16
+    Electrostatic blowing source:
+      access: read
+      device: D32010
+      datatype: int16
+    Vacuum break source:
+      access: read
+      device: D32014
+      datatype: int16
+    Vacuum source 1:
+      access: read
+      device: D32018
+      datatype: int16
+    Vacuum source 2:
+      access: read
+      device: D32022
+      datatype: int16
+    Vacuum source 3:
+      access: read
+      device: D32026
+      datatype: int16
+    Vacuum source 4:
+      access: read
+      device: D32030
+      datatype: int16
+    SM01-Motor current:
+      access: read
+      device: D3100
+      datatype: int16
+    SM01-Motor speed:
+      access: read
+      device: D3110
+      datatype: int16
+    SM01-Motor Temp:
+      access: read
+      device: D3104
+      datatype: int16
+    SM02-Motor current:
+      access: read
+      device: D3350
+      datatype: int16
+    SM02-Motor speed:
+      access: read
+      device: D3360
+      datatype: int16
+    SM02-Motor Temp:
+      access: read
+      device: D3354
+      datatype: int16
+    SM03-Motor current:
+      access: read
+      device: D3600
+      datatype: int16
+    SM03-Motor speed:
+      access: read
+      device: D3610
+      datatype: int16
+    SM03-Motor Temp:
+      access: read
+      device: D3604
+      datatype: int16
+    SM04-Motor current:
+      access: read
+      device: D3850
+      datatype: int16
+    SM04-Motor speed:
+      access: read
+      device: D3860
+      datatype: int16
+    SM04-Motor Temp:
+      access: read
+      device: D3854
+      datatype: int16
+    SM05-Motor current:
+      access: read
+      device: D4100
+      datatype: int16
+    SM05-Motor speed:
+      access: read
+      device: D4110
+      datatype: int16
+    SM05-Motor Temp:
+      access: read
+      device: D4104
+      datatype: int16
+    SM06-Motor current:
+      access: read
+      device: D4350
+      datatype: int16
+    SM06-Motor speed:
+      access: read
+      device: D4360
+      datatype: int16
+    SM06-Motor Temp:
+      access: read
+      device: D4354
+      datatype: int16
+    SM07-Motor current:
+      access: read
+      device: D4600
+      datatype: int16
+    SM07-Motor speed:
+      access: read
+      device: D4610
+      datatype: int16
+    SM07-Motor Temp:
+      access: read
+      device: D4604
+      datatype: int16
+    SM08-Motor current:
+      access: read
+      device: D4850
+      datatype: int16
+    SM08-Motor speed:
+      access: read
+      device: D4860
+      datatype: int16
+    SM08-Motor Temp:
+      access: read
+      device: D4854
+      datatype: int16
+    SM09-Motor current:
+      access: read
+      device: D5100
+      datatype: int16
+    SM09-Motor speed:
+      access: read
+      device: D5110
+      datatype: int16
+    SM09-Motor Temp:
+      access: read
+      device: D5104
+      datatype: int16
+    SM10-Motor current:
+      access: read
+      device: D5350
+      datatype: int16
+    SM10-Motor speed:
+      access: read
+      device: D5360
+      datatype: int16
+    SM10-Motor Temp:
+      access: read
+      device: D5354
+      datatype: int16
+    SM11-Motor current:
+      access: read
+      device: D5600
+      datatype: int16
+    SM11-Motor speed:
+      access: read
+      device: D5610
+      datatype: int16
+    SM11-Motor Temp:
+      access: read
+      device: D5604
+      datatype: int16
+    SM12-Motor current:
+      access: read
+      device: D5850
+      datatype: int16
+    SM12-Motor speed:
+      access: read
+      device: D5860
+      datatype: int16
+    SM12-Motor Temp:
+      access: read
+      device: D5854
+      datatype: int16
+    SM13-Motor current:
+      access: read
+      device: D6100
+      datatype: int16
+    SM13-Motor speed:
+      access: read
+      device: D6110
+      datatype: int16
+    SM13-Motor Temp:
+      access: read
+      device: D6104
+      datatype: int16
+    SM17-Motor current:
+      access: read
+      device: D7100
+      datatype: int16
+    SM17-Motor speed:
+      access: read
+      device: D7110
+      datatype: int16
+    SM17-Motor Temp:
+      access: read
+      device: D7104
+      datatype: int16
+    SM18-Motor current:
+      access: read
+      device: D7350
+      datatype: int16
+    SM18-Motor speed:
+      access: read
+      device: D7360
+      datatype: int16
+    SM18-Motor Temp:
+      access: read
+      device: D7354
+      datatype: int16
+    SM19-Motor current:
+      access: read
+      device: D7600
+      datatype: int16
+    SM19-Motor speed:
+      access: read
+      device: D7610
+      datatype: int16
+    SM19-Motor Temp:
+      access: read
+      device: D7604
+      datatype: int16
+    SM20-Motor current:
+      access: read
+      device: D7850
+      datatype: int16
+    SM20-Motor speed:
+      access: read
+      device: D7860
+      datatype: int16
+    SM20-Motor Temp:
+      access: read
+      device: D7854
+      datatype: int16
+    SM21-Motor current:
+      access: read
+      device: D8100
+      datatype: int16
+    SM21-Motor speed:
+      access: read
+      device: D8110
+      datatype: int16
+    SM21-Motor Temp:
+      access: read
+      device: D8104
+      datatype: int16
+    SM22-Motor current:
+      access: read
+      device: D8350
+      datatype: int16
+    SM22-Motor speed:
+      access: read
+      device: D8360
+      datatype: int16
+    SM22-Motor Temp:
+      access: read
+      device: D8354
+      datatype: int16
+    SM23-Motor current:
+      access: read
+      device: D8600
+      datatype: int16
+    SM23-Motor speed:
+      access: read
+      device: D8610
+      datatype: int16
+    SM23-Motor Temp:
+      access: read
+      device: D8604
+      datatype: int16
+    SM24-Motor current:
+      access: read
+      device: D8850
+      datatype: int16
+    SM24-Motor speed:
+      access: read
+      device: D8860
+      datatype: int16
+    SM24-Motor Temp:
+      access: read
+      device: D8854
+      datatype: int16
+    SM25-Motor current:
+      access: read
+      device: D9100
+      datatype: int16
+    SM25-Motor speed:
+      access: read
+      device: D9110
+      datatype: int16
+    SM25-Motor Temp:
+      access: read
+      device: D9104
+      datatype: int16
+    SM26-Motor current:
+      access: read
+      device: D9350
+      datatype: int16
+    SM26-Motor speed:
+      access: read
+      device: D9360
+      datatype: int16
+    SM26-Motor Temp:
+      access: read
+      device: D9354
+      datatype: int16
+    SM27-Motor current:
+      access: read
+      device: D9600
+      datatype: int16
+    SM27-Motor speed:
+      access: read
+      device: D9610
+      datatype: int16
+    SM27-Motor Temp:
+      access: read
+      device: D9604
+      datatype: int16
+    SM33-Motor current:
+      access: read
+      device: D11100
+      datatype: int16
+    SM33-Motor speed:
+      access: read
+      device: D11110
+      datatype: int16
+    SM33-Motor Temp:
+      access: read
+      device: D11104
+      datatype: int16
+    SM34-Motor current:
+      access: read
+      device: D11350
+      datatype: int16
+    SM34-Motor speed:
+      access: read
+      device: D11360
+      datatype: int16
+    SM34-Motor Temp:
+      access: read
+      device: D11354
+      datatype: int16
+    SM35-Motor current:
+      access: read
+      device: D11600
+      datatype: int16
+    SM35-Motor speed:
+      access: read
+      device: D11610
+      datatype: int16
+    SM35-Motor Temp:
+      access: read
+      device: D11604
+      datatype: int16
+    SM36-Motor current:
+      access: read
+      device: D11850
+      datatype: int16
+    SM36-Motor speed:
+      access: read
+      device: D11860
+      datatype: int16
+    SM36-Motor Temp:
+      access: read
+      device: D11854
+      datatype: int16
+    SM37-Motor current:
+      access: read
+      device: D12100
+      datatype: int16
+    SM37-Motor speed:
+      access: read
+      device: D12110
+      datatype: int16
+    SM37-Motor Temp:
+      access: read
+      device: D12104
+      datatype: int16
+    SM38-Motor current:
+      access: read
+      device: D12350
+      datatype: int16
+    SM38-Motor speed:
+      access: read
+      device: D12360
+      datatype: int16
+    SM38-Motor Temp:
+      access: read
+      device: D12354
+      datatype: int16
+    SM39-Motor current:
+      access: read
+      device: D12600
+      datatype: int16
+    SM39-Motor speed:
+      access: read
+      device: D12610
+      datatype: int16
+    SM39-Motor Temp:
+      access: read
+      device: D12604
+      datatype: int16
+    SM40-Motor current:
+      access: read
+      device: D12850
+      datatype: int16
+    SM40-Motor speed:
+      access: read
+      device: D12860
+      datatype: int16
+    SM40-Motor Temp:
+      access: read
+      device: D12854
+      datatype: int16
+    SM41-Motor current:
+      access: read
+      device: D13100
+      datatype: int16
+    SM41-Motor speed:
+      access: read
+      device: D13110
+      datatype: int16
+    SM41-Motor Temp:
+      access: read
+      device: D13104
+      datatype: int16
+    SM42-Motor current:
+      access: read
+      device: D13350
+      datatype: int16
+    SM42-Motor speed:
+      access: read
+      device: D13360
+      datatype: int16
+    SM42-Motor Temp:
+      access: read
+      device: D13354
+      datatype: int16
+    SM43-Motor current:
+      access: read
+      device: D13600
+      datatype: int16
+    SM43-Motor speed:
+      access: read
+      device: D13610
+      datatype: int16
+    SM43-Motor Temp:
+      access: read
+      device: D13604
+      datatype: int16
+    SM44-Motor current:
+      access: read
+      device: D13850
+      datatype: int16
+    SM44-Motor speed:
+      access: read
+      device: D13860
+      datatype: int16
+    SM44-Motor Temp:
+      access: read
+      device: D13854
+      datatype: int16
+    SM45-Motor current:
+      access: read
+      device: D14100
+      datatype: int16
+    SM45-Motor speed:
+      access: read
+      device: D14110
+      datatype: int16
+    SM45-Motor Temp:
+      access: read
+      device: D14104
+      datatype: int16
+    SM46-Motor current:
+      access: read
+      device: D14350
+      datatype: int16
+    SM46-Motor speed:
+      access: read
+      device: D14360
+      datatype: int16
+    SM46-Motor Temp:
+      access: read
+      device: D14354
+      datatype: int16
+    SM47-Motor current:
+      access: read
+      device: D14600
+      datatype: int16
+    SM47-Motor speed:
+      access: read
+      device: D14610
+      datatype: int16
+    SM47-Motor Temp:
+      access: read
+      device: D14604
+      datatype: int16
+    SM48-Motor current:
+      access: read
+      device: D14850
+      datatype: int16
+    SM48-Motor speed:
+      access: read
+      device: D14860
+      datatype: int16
+    SM48-Motor Temp:
+      access: read
+      device: D14854
+      datatype: int16
+    N2 concentration:
+      access: read
+      device: D720
+      datatype: int16
+    LD pressure difference:
+      access: read
+      device: D31018
+      datatype: int16
+    LED pressure difference:
+      access: read
+      device: D31019
+      datatype: int16
+    Cutting pressure difference:
+      access: read
+      device: D31020
+      datatype: int16
+    CF pressure difference:
+      access: read
+      device: D31021
+      datatype: int16
+    Tear off pressure difference:
+      access: read
+      device: D31022
+      datatype: int16
+    FILM pressure difference:
+      access: read
+      device: D31023
+      datatype: int16
+    ULD pressure difference:
+      access: read
+      device: D31024
+      datatype: int16
+    FC film pressure difference:
+      access: read
+      device: D31025
+      datatype: int16
+    FC unload pressure difference:
+      access: read
+      device: D31026
+      datatype: int16
+    Particle-1-0.3um:
+      access: read
+      device: W2C0
+      datatype: int16
+    Particle-1-0.5um:
+      access: read
+      device: W2C2
+      datatype: int16
+    Particle-1-1um:
+      access: read
+      device: W2C4
+      datatype: int16
+    Particle-1-5um:
+      access: read
+      device: W2C6
+      datatype: int16
+    Particle-2-0.3um:
+      access: read
+      device: W2C8
+      datatype: int16
+    Particle-2-0.5um:
+      access: read
+      device: W2CA
+      datatype: int16
+    Particle-2-1um:
+      access: read
+      device: W2CC
+      datatype: int16
+    Particle-2-5um:
+      access: read
+      device: W2CE
+      datatype: int16
+    LD mw- Top:
+      access: read
+      device: W2E0
+      datatype: int16
+    LD mj- Top:
+      access: read
+      device: W2F0
+      datatype: int16
+    LD mw- Bottom:
+      access: read
+      device: W2E1
+      datatype: int16
+    LD mj- Bottom:
+      access: read
+      device: W2F1
+      datatype: int16
+    LD mw- Left:
+      access: read
+      device: W2E3
+      datatype: int16
+    LD mj- Left:
+      access: read
+      device: W2F3
+      datatype: int16
+    LD mw- Center:
+      access: read
+      device: W2E4
+      datatype: int16
+    LD mj- Center:
+      access: read
+      device: W2F4
+      datatype: int16
+    LD mw- Right:
+      access: read
+      device: W2E2
+      datatype: int16
+    LD mj- Right:
+      access: read
+      device: W2F2
+      datatype: int16
+    ULD mw- Top:
+      access: read
+      device: W300
+      datatype: int16
+    ULD mj- Top:
+      access: read
+      device: W310
+      datatype: int16
+    ULD mw- Bottom:
+      access: read
+      device: W302
+      datatype: int16
+    ULD mj- Bottom:
+      access: read
+      device: W312
+      datatype: int16
+    ULD mw- Left:
+      access: read
+      device: W304
+      datatype: int16
+    ULD mj- Left:
+      access: read
+      device: W314
+      datatype: int16
+    ULD mw- Center:
+      access: read
+      device: W301
+      datatype: int16
+    ULD mj- Center:
+      access: read
+      device: W311
+      datatype: int16
+    ULD mw- Right:
+      access: read
+      device: W303
+      datatype: int16
+    ULD mj- Right:
+      access: read
+      device: W313
+      datatype: int16
+    LD Door State:
+      access: read
+      device: W400
+      datatype: int16
+    CF Door State:
+      access: read
+      device: W401
+      datatype: int16
+    FC Door State:
+      access: read
+      device: W402
+      datatype: int16
+    FILM Door State:
+      access: read
+      device: W403
+      datatype: int16
+    ULD Door State:
+      access: read
+      device: W404
+      datatype: int16
 - name: PLC_02
   ip: 20.6.35.107
   port: 16002
