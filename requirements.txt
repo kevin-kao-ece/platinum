@@ -6,3 +6,5 @@ pymongo
 fastapi
 uvicorn[standard]
 cryptography
+pywin32
+pyinstaller

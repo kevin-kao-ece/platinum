@@ -6,7 +6,7 @@ REM Output: .\dist\melsecBridge.exe
 
 cd /d "%~dp0"
 
-python -m PyInstaller --noconfirm "%CD%\melsecBrider.spec"
+py -3 -m PyInstaller --noconfirm "%CD%\melsecBridge.spec"
 if errorlevel 1 (
   echo Build failed.
   exit /b 1

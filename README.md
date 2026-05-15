@@ -87,7 +87,7 @@ build_exe.bat
 
 - **開發/直接跑原始碼時**：請確保在「專案根目錄」存在 `static\` 資料夾。
   - 位置：`C:\repo\platinum\static\`
-- **打包成單一 exe（onefile）後**：`static\` 會由打包設定（`melsecBrider.spec` 的 `datas=[('static','static')]`）**一起打包進 exe**，部署端通常**不需要另外建立 `static\`**。
+- **打包成單一 exe（onefile）後**：`static\` 會由打包設定（`melsecBridge.spec` 的 `datas=[('static','static')]`）**一起打包進 exe**，部署端通常**不需要另外建立 `static\`**。
   - 只有在你想「部署端自行替換靜態檔」時，才需要放一份 `static\` 在 exe 旁邊並調整程式讀取邏輯（目前程式會從打包內建資源載入）。
 
 ### 以 Windows Service 執行（pywin32）
